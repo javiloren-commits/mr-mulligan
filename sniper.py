@@ -36,7 +36,7 @@ HEADERS = {
     "Cache-Control": "max-age=0;no-cache;no-store",
 }
 
-POLL_INTERVAL = 30  # segundos entre intentos
+POLL_INTERVAL_DEFAULT = 30  # segundos entre intentos
 
 # ══════════════════════════════════════════════════════
 #  ESTADO GLOBAL DEL SNIPER
