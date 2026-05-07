@@ -95,10 +95,12 @@ def contactos_endpoint():
         result = data.get("PartidosContactosResult", {})
         lista = result.get("Jugadores", []) or []
         for j in lista:
+            nombre_parts = [j.get("nombre",""), j.get("apellido","")]
+            nombre = " ".join(p for p in nombre_parts if p).strip() or j.get("NombreCompleto","")
             contactos.append({
-                "id": j.get("IDJugador"),
-                "nombre": j.get("NombreCompleto", ""),
-                "hcp": j.get("Handicap"),
+                "id": j.get("codigo") or j.get("IDJugador"),
+                "nombre": nombre,
+                "hcp": j.get("Handicap") or j.get("handicap"),
             })
 
         return jsonify({"ok": True, "contactos": contactos})
@@ -226,15 +228,14 @@ def do_login(usuario, clave):
 
         if status_ok:
             jugador = result.get("Jugador") or result.get("DatosJugador") or {}
+            # La API usa 'codigo' como ID del jugador
             jugador_id = (
-                jugador.get("IDJugador") or jugador.get("Id") or
+                jugador.get("codigo") or jugador.get("IDJugador") or jugador.get("Id") or
                 result.get("IDJugador") or result.get("IdJugador")
             )
-            nombre = (
-                jugador.get("NombreCompleto") or jugador.get("Nombre") or
-                result.get("NombreCompleto") or result.get("Nombre") or
-                usuario
-            )
+            # Nombre completo: nombre + apellido
+            nombre_parts = [jugador.get("nombre",""), jugador.get("apellido","")]
+            nombre = " ".join(p for p in nombre_parts if p).strip() or usuario
             print(f"[login] OK - jugadorId={jugador_id} nombre={nombre}")
             return {"ok": True, "jugadorId": jugador_id, "nombre": nombre}
         else:
