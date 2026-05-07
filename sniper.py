@@ -172,6 +172,69 @@ def stop_sniper():
     return jsonify({"ok": True})
 
 
+@app.route("/fechas", methods=["POST"])
+def fechas_endpoint():
+    """Devuelve las fechas disponibles para reservar."""
+    try:
+        url = f"{BASE_URL}/Reservas/json/diaspermitidos/{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA}"
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        data = r.json()
+        dias = data.get("DiasPermitidosResult", []) or []
+        fechas = []
+        for d in dias:
+            hora_raw = d.get("fecha") or d.get("Fecha") or ""
+            if hora_raw:
+                fecha_str = unix_date_to_hhmm.__module__ and None  # just to reference
+                import re
+                m = re.search(r"/Date\((\d+)", hora_raw)
+                if m:
+                    import datetime as dt
+                    ts = int(m.group(1)) // 1000
+                    fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
+                    fechas.append(fecha_dt.strftime("%Y-%m-%d"))
+        # Si la API devuelve lista simple de timestamps
+        if not fechas:
+            for d in dias:
+                if isinstance(d, str) and "/Date(" in d:
+                    import re, datetime as dt
+                    m = re.search(r"/Date\((\d+)", d)
+                    if m:
+                        ts = int(m.group(1)) // 1000
+                        fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
+                        fechas.append(fecha_dt.strftime("%Y-%m-%d"))
+        print(f"[fechas] {len(fechas)} fechas disponibles: {fechas[:5]}")
+        return jsonify({"ok": True, "fechas": fechas})
+    except Exception as e:
+        print(f"[fechas] Error: {e}")
+        return jsonify({"ok": False, "fechas": []})
+
+
+@app.route("/validar_jugadores", methods=["POST"])
+def validar_jugadores_endpoint():
+    """Verifica qué jugadores ya tienen reserva en una fecha concreta."""
+    body = request.get_json()
+    jugador_id = body.get("jugadorId")
+    fecha = body.get("fecha", "")
+    ids = body.get("ids", [])
+    fecha_fmt = fecha.replace("-", "")
+
+    ocupados = []
+    for jid in ids:
+        try:
+            url = f"{BASE_URL}/Reservas/json/validarjugador/{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA},{fecha_fmt},{jid},{IDIOMA}"
+            r = requests.get(url, headers=HEADERS, timeout=8)
+            data = r.json()
+            result = data.get("ValidarJugadorResult", {})
+            # Si tiene reserva ese día, el resultado indica que NO puede reservar
+            if not result.get("StatusOK", True) or result.get("TieneReserva") or result.get("Valor") == False:
+                ocupados.append(jid)
+        except Exception:
+            pass
+
+    print(f"[validar_jugadores] fecha={fecha} ocupados={ocupados}")
+    return jsonify({"ok": True, "ocupados": ocupados})
+
+
 @app.route("/reservas", methods=["POST"])
 def reservas_endpoint():
     """Devuelve las reservas actuales del jugador."""
