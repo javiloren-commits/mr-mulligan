@@ -311,48 +311,60 @@ def get_tiempos(fecha, tipo):
         return None
 
 
-def crear_reserva(usuario, clave, jugador_id, fecha, hora, tipo, jugadores):
+def fecha_str(fecha, hora):
+    """Construye FechaStr: YYYYMMDDHHММ"""
+    return fecha.replace("-", "") + hora.replace(":", "")
+
+
+def build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores, desmarcar_cobro=False, cod_jugador_paga=0, tipo_cobro=0, pago=None):
+    """Construye el objeto reserva común a CrearReserva y PagarReserva."""
+    componentes = [{"Codigo": jid} for jid in jugadores]
+    return {
+        "Centro": int(CENTRO),
+        "DesmarcarCobro": desmarcar_cobro,
+        "TipoJugador": 1,
+        "Deporte": int(DEPORTE_GOLF),
+        "JugadorFamiliar": 0,
+        "CodJugadorProcesar": 0,
+        "CodJugadorPaga": cod_jugador_paga,
+        "TipoCobro": tipo_cobro,
+        "Codigo": 0,
+        "FechaStr": fecha_str(fecha, hora),
+        "Instalacion": int(cod_instalacion),
+        "Idioma": int(IDIOMA),
+        "Pago": pago or [],
+        "Componentes": componentes,
+        "BuscarJugadores": False,
+        "Tipo": 7,
+        "TiempoJuego": 5,
+        "Procedencia": int(PROCEDENCIA),
+    }
+
+
+def crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores):
     """
     Crea una reserva (PUT /Reservas/json/CrearReserva).
-    Devuelve el ID de reserva si tiene éxito.
+    Payload exacto extraído de captura Charles.
     """
     try:
-        fecha_fmt = fecha.replace("-", "")
-        hora_fmt = hora.replace(":", "")
-
-        # Construir lista de jugadores
-        jugadores_payload = []
-        for i, jid in enumerate(jugadores):
-            jugadores_payload.append({
-                "IDJugador": jid,
-                "Orden": i + 1,
-                "EsTitular": i == 0
-            })
-
-        payload = {
-            "CrearReservaRequest": {
-                "IDCentro": int(CENTRO),
-                "IDDeporte": int(tipo),
-                "IDProcedencia": int(PROCEDENCIA),
-                "Fecha": fecha_fmt,
-                "Hora": hora_fmt,
-                "IDJugadorPrincipal": jugador_id,
-                "Jugadores": jugadores_payload,
-                "IDIdioma": int(IDIOMA),
-            }
-        }
-
+        payload = {"reserva": build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores)}
         url = f"{BASE_URL}/Reservas/json/CrearReserva"
+        print(f"[crear_reserva] PUT {url} payload={payload}")
         r = requests.put(url, headers={**HEADERS, "Content-Type": "application/json"},
                          json=payload, timeout=15)
+        print(f"[crear_reserva] HTTP {r.status_code} - {r.text[:300]}")
         data = r.json()
         result = data.get("CrearReservaResult", {})
-
         if result.get("StatusOK"):
-            return {"ok": True, "reservaId": result.get("IDReserva")}
+            reserva_id = result.get("Valor")  # Valor contiene el ID numérico
+            print(f"[crear_reserva] ✅ Reserva creada ID={reserva_id} - {result.get('Mensaje','')}")
+            return {"ok": True, "reservaId": reserva_id}
         else:
-            return {"ok": False, "error": result.get("Mensaje", "Error creando reserva")}
+            msg = result.get("Mensaje") or "Error creando reserva"
+            print(f"[crear_reserva] ❌ {msg}")
+            return {"ok": False, "error": msg}
     except Exception as e:
+        import traceback; traceback.print_exc()
         return {"ok": False, "error": str(e)}
 
 
@@ -373,31 +385,59 @@ def crear_ticket(reserva_id, jugador_id):
         return {"ok": False, "error": str(e)}
 
 
-def pagar_reserva(reserva_id, jugador_id, ticket_data):
-    """Confirma y paga la reserva."""
+def pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_data):
+    """
+    Confirma y paga la reserva (PUT /Reservas/json/PagarReserva).
+    Payload exacto extraído de captura Charles.
+    FormaPago -2 = A CUENTA (domiciliación bancaria, sin coste inmediato).
+    """
     try:
-        payload = {
-            "PagarReservaRequest": {
-                "IDReserva": reserva_id,
-                "IDJugador": jugador_id,
-                "IDProcedencia": int(PROCEDENCIA),
-                "IDIdioma": int(IDIOMA),
-                "FormaPago": 1,  # Pago contra cuenta del socio
-                "Ticket": ticket_data,
+        pago = [{
+            "Centro": int(CENTRO),
+            "Idioma": int(IDIOMA),
+            "Procedencia": int(PROCEDENCIA),
+            "TransaccionTpv": {},
+            "Tipo": 8,
+            "LineaTicket": 0,
+            "Jugador": jugador_id,
+            "Importe": 0,
+            "ASaldo": 0,
+            "FormaPago": {
+                "EsTarjeta": False,
+                "EsAbonoAutorizado": False,
+                "Codigo": -2,       # A CUENTA = domiciliación
+                "EsMonedero": False,
+                "EsAbono": False,
+                "EsDeuda": False,
             }
-        }
+        }]
 
+        reserva = build_reserva_base(
+            jugador_id, fecha, hora, cod_instalacion, jugadores,
+            desmarcar_cobro=True,
+            cod_jugador_paga=jugador_id,
+            tipo_cobro=ticket_data.get("TipoCobro", 1),
+            pago=pago,
+        )
+        reserva["Codigo"] = reserva_id  # ID de la reserva creada
+
+        payload = {"reserva": reserva}
         url = f"{BASE_URL}/Reservas/json/PagarReserva"
+        print(f"[pagar_reserva] PUT {url}")
         r = requests.put(url, headers={**HEADERS, "Content-Type": "application/json"},
                          json=payload, timeout=15)
+        print(f"[pagar_reserva] HTTP {r.status_code} - {r.text[:300]}")
         data = r.json()
         result = data.get("PagarReservaResult", {})
-
         if result.get("StatusOK"):
+            print(f"[pagar_reserva] ✅ {result.get('Mensaje','')}")
             return {"ok": True}
         else:
-            return {"ok": False, "error": result.get("Mensaje", "Error en el pago")}
+            msg = result.get("Mensaje") or "Error en el pago"
+            print(f"[pagar_reserva] ❌ {msg}")
+            return {"ok": False, "error": msg}
     except Exception as e:
+        import traceback; traceback.print_exc()
         return {"ok": False, "error": str(e)}
 
 
@@ -570,7 +610,7 @@ def sniper_loop(params):
             continue
 
         # 5. Pagar/confirmar reserva
-        pago_res = pagar_reserva(reserva_id, jugador_id, ticket_res["ticket"])
+        pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_res["ticket"])
         if not pago_res["ok"]:
             print(f"[Sniper] Error pago: {pago_res['error']}")
             sniper_state["status"] = "searching"
