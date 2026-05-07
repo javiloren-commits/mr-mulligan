@@ -228,15 +228,18 @@ def do_login(usuario, clave):
 def get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo):
     """
     Obtiene huecos disponibles para una fecha y tipo de campo.
-    Endpoint: /Reservas/json/instalacionesdia/{jugadorId},{fechaHora},{centro},{tipo},{procedencia},{min_jugadores},{max_jugadores},{idioma},{param}
-    Fecha formato: YYYYMMDD0000
+    Captura real: /instalacionesdia/33894,202605080000,24,6,6,5,7,1,4
+    Parámetros:   jugadorId, fechaHora, centro, deporte, procedencia, ?, ?, idioma, ?
     """
     try:
         fecha_fmt = fecha.replace("-", "") + "0000"
-        # Parámetros basados en la captura: 33894,202605080000,24,6,6,5,7,1,4
-        # jugadorId, fechaHora, centro, tipo, procedencia, minJugadores, maxJugadores, idioma, ?
-        url = f"{BASE_URL}/Reservas/json/instalacionesdia/{jugador_id},{fecha_fmt},{CENTRO},{tipo},{PROCEDENCIA},1,4,{IDIOMA},4"
+        # Usando exactamente la misma estructura que la captura de Charles,
+        # solo cambiando jugadorId, fechaHora y tipo de deporte
+        url = f"{BASE_URL}/Reservas/json/instalacionesdia/{jugador_id},{fecha_fmt},{CENTRO},{tipo},{PROCEDENCIA},5,7,{IDIOMA},4"
+        print(f"[instalacionesdia] GET {url}")
         r = requests.get(url, headers=HEADERS, timeout=15)
+        print(f"[instalacionesdia] HTTP {r.status_code}")
+        print(f"[instalacionesdia] Respuesta: {r.text[:1000]}")
         data = r.json()
         return data
     except Exception as e:
@@ -349,36 +352,101 @@ def pagar_reserva(reserva_id, jugador_id, ticket_data):
 def parsear_huecos(instalaciones_data, desde, hasta):
     """
     Extrae huecos disponibles dentro de la franja horaria.
-    Devuelve lista de horas en formato HH:MM ordenadas.
+    Prueba múltiples estructuras posibles del JSON.
     """
     huecos = []
-    try:
-        result = instalaciones_data.get("InstalacionesDiaResult", {})
-        instalaciones = result.get("Instalaciones", []) or []
+    print(f"[parsear_huecos] Claves raíz: {list(instalaciones_data.keys())}")
 
+    try:
         desde_min = time_to_minutes(desde)
         hasta_min = time_to_minutes(hasta)
 
-        for inst in instalaciones:
-            horarios = inst.get("Horarios", []) or []
-            for h in horarios:
-                hora_str = h.get("Hora", "")  # Formato "HH:MM" o "HHMM"
-                if not hora_str:
-                    continue
+        # Buscar la clave principal del resultado (puede variar)
+        result = None
+        for key in instalaciones_data:
+            if "Result" in key or "result" in key or "Instalacion" in key:
+                result = instalaciones_data[key]
+                print(f"[parsear_huecos] Usando clave: {key}")
+                break
 
-                # Normalizar formato
-                if ":" not in hora_str and len(hora_str) == 4:
-                    hora_str = hora_str[:2] + ":" + hora_str[2:]
+        if result is None:
+            result = instalaciones_data
+            print(f"[parsear_huecos] Usando raíz directamente")
 
-                hora_min = time_to_minutes(hora_str)
-                disponible = h.get("Disponible", False) or h.get("EsLibre", False)
+        print(f"[parsear_huecos] Tipo result: {type(result)}, claves: {list(result.keys()) if isinstance(result, dict) else 'lista'}")
 
-                if disponible and desde_min <= hora_min <= hasta_min:
-                    huecos.append(hora_str)
+        # Buscar lista de huecos/horarios en distintas estructuras posibles
+        candidatos = []
+
+        if isinstance(result, dict):
+            # Opción A: result tiene lista "Instalaciones"
+            if "Instalaciones" in result:
+                for inst in (result["Instalaciones"] or []):
+                    for h in (inst.get("Horarios") or inst.get("Huecos") or []):
+                        candidatos.append(h)
+
+            # Opción B: result tiene lista "Horarios" directa
+            elif "Horarios" in result:
+                candidatos = result["Horarios"] or []
+
+            # Opción C: result tiene lista "Huecos"
+            elif "Huecos" in result:
+                candidatos = result["Huecos"] or []
+
+            # Opción D: buscar cualquier lista dentro del result
+            else:
+                for key, val in result.items():
+                    if isinstance(val, list) and len(val) > 0:
+                        print(f"[parsear_huecos] Lista encontrada en clave '{key}': {len(val)} items")
+                        # Mostrar primer elemento para entender estructura
+                        print(f"[parsear_huecos] Primer item: {val[0]}")
+                        candidatos = val
+                        break
+
+        elif isinstance(result, list):
+            candidatos = result
+
+        print(f"[parsear_huecos] Candidatos encontrados: {len(candidatos)}")
+        if candidatos:
+            print(f"[parsear_huecos] Ejemplo de candidato: {candidatos[0]}")
+
+        for h in candidatos:
+            if not isinstance(h, dict):
+                continue
+
+            # Buscar campo de hora (distintos nombres posibles)
+            hora_str = (
+                h.get("Hora") or h.get("hora") or
+                h.get("HoraInicio") or h.get("Horario") or
+                h.get("Time") or ""
+            )
+            if not hora_str:
+                continue
+
+            hora_str = str(hora_str)
+            # Normalizar: HHMM → HH:MM
+            if ":" not in hora_str and len(hora_str) == 4:
+                hora_str = hora_str[:2] + ":" + hora_str[2:]
+
+            hora_min = time_to_minutes(hora_str)
+
+            # Buscar campo disponibilidad (distintos nombres posibles)
+            disponible = (
+                h.get("Disponible") or h.get("disponible") or
+                h.get("EsLibre") or h.get("Libre") or
+                h.get("Available") or False
+            )
+
+            if disponible and desde_min <= hora_min <= hasta_min:
+                huecos.append(hora_str)
 
         huecos.sort()
+        print(f"[parsear_huecos] Huecos en franja {desde}-{hasta}: {huecos}")
+
     except Exception as e:
         print(f"[parsear_huecos] Error: {e}")
+        import traceback
+        traceback.print_exc()
 
     return huecos
 
