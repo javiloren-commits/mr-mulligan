@@ -39,9 +39,23 @@ HEADERS = {
 POLL_INTERVAL_DEFAULT = 30  # segundos entre intentos
 
 # ══════════════════════════════════════════════════════
-#  ESTADO GLOBAL DEL SNIPER
+#  ESTADO GLOBAL — múltiples snipers indexados por fecha
 # ══════════════════════════════════════════════════════
-# sniper_state removed - using snipers dict
+snipers = {}
+snipers_lock = __import__('threading').Lock()
+
+def make_sniper_state():
+    return {
+        "status": "idle",
+        "attempts": 0,
+        "mensaje": "",
+        "error": "",
+        "reserva": None,
+        "params": None,
+        "thread": None,
+        "stop_event": __import__('threading').Event(),
+        "poll_interval": POLL_INTERVAL_DEFAULT,
+    }
 
 
 # ══════════════════════════════════════════════════════
