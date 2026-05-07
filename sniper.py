@@ -1079,19 +1079,40 @@ def mejora_loop(key, params):
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
-        huecos = filtrar_por_instalacion(huecos, tipo, preferencia, modo_hora, desde, hasta)
+        # Un hueco es "mejor" si:
+        # 1. Es más temprano que la hora actual, O
+        # 2. Es la misma hora pero en el campo preferido (y el actual no lo es)
+        try:
+            pref_int = int(preferencia) if preferencia else None
+        except (ValueError, TypeError):
+            pref_int = None
 
-        # Solo considerar huecos MEJORES que el actual (hora más temprana)
-        huecos_mejores = [h for h in huecos if h["hora"] < hora_actual]
-        print(f"[Mejora:{reserva_id}] Huecos mejores que {hora_actual}: {[h['hora'] for h in huecos_mejores]}")
+        def es_mejora(h):
+            if h["hora"] < hora_actual:
+                return True
+            if h["hora"] == hora_actual and pref_int and h["cod_instalacion"] == pref_int and h["cod_instalacion"] != cod_inst_actual:
+                return True
+            return False
 
-        if not huecos_mejores:
+        huecos_mejores_raw = [h for h in huecos if es_mejora(h)]
+        print(f"[Mejora:{reserva_id}] Huecos mejores que {hora_actual} inst={cod_inst_actual}: {[(h['hora'], h['cod_instalacion']) for h in huecos_mejores_raw]}")
+
+        if not huecos_mejores_raw:
             set_state(mensaje=f"Sin mejora disponible. Reintentando en {poll_interval}s…")
             stop_event.wait(poll_interval)
             continue
 
-        # ¡Hay mejora! Tomar el más temprano
-        hueco = huecos_mejores[0]
+        # Aplicar preferencia de campo y horario sobre los candidatos
+        horas_mejores = [h["hora"] for h in huecos_mejores_raw]
+        desde_real = min(horas_mejores)
+        huecos_seleccion = filtrar_por_instalacion(huecos_mejores_raw, tipo, preferencia, modo_hora, desde_real, hora_actual)
+
+        if not huecos_seleccion:
+            set_state(mensaje=f"Sin mejora disponible. Reintentando en {poll_interval}s…")
+            stop_event.wait(poll_interval)
+            continue
+
+        hueco = huecos_seleccion[0]
         hora_nueva = hueco["hora"]
         cod_inst_nueva = hueco["cod_instalacion"]
         set_state(status="found", mensaje=f"¡Mejora a las {hora_nueva}! Moviendo reserva…")
