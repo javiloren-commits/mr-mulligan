@@ -34,7 +34,7 @@ def start_sniper():
     return jsonify({"status": "success", "message": "Sniper iniciado correctamente"})
 
 def sniper_loop(username, password):
-    print(f"🚀 Bucle de búsqueda iniciado para {username}")
+    print(f"🚀 Bucle automático iniciado para {username}")
     session = requests.Session()
     
     headers = {
@@ -45,31 +45,24 @@ def sniper_loop(username, password):
     while True:
         try:
             fecha_str = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%Y")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Buscando en {fecha_str}...")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Buscando hueco en {fecha_str}...")
 
-            # 1. Login real con API móvil
-            login_url = f"https://reservas.rshecc.es/AppWebServices.7.0.0/Jugadores/json/login?centro=24&usuario={username}&clave={password}&procedencia=6&idioma=1"
-            r = session.get(login_url, headers=headers)
+            # Aquí irá la búsqueda real + reserva automática del primer hueco
+            # Por ahora simulamos éxito para probar el flujo completo
+            hora_encontrada = "08:12"
 
-            if r.status_code != 200 or "StatusOK" not in r.text or "true" not in r.text.lower():
-                print("❌ Login fallido")
-                bot.send_message(chat_id=CHAT_ID, text="❌ Error en login", parse_mode='HTML')
-                time.sleep(300)
-                continue
-
-            print("✅ Login OK")
-
-            # Aquí irá la búsqueda real de huecos (próxima iteración)
-            # Por ahora simulamos una reserva para que veas el flujo completo
             bot.send_message(
                 chat_id=CHAT_ID,
                 text=f"🎉 <b>RESERVA REALIZADA AUTOMÁTICAMENTE</b>\n\n"
                      f"Fecha: <b>{fecha_str}</b>\n"
-                     f"Tipo: Norte — 18 Hoyos\n"
-                     f"Hora: 08:12 (primer hueco disponible)\n\n"
+                     f"Hora: <b>{hora_encontrada}</b> (primer hueco disponible)\n"
+                     f"Tipo: Norte — 18 Hoyos\n\n"
                      f"Mr Mulligan ha reservado por ti ✅",
                 parse_mode='HTML'
             )
+
+            # Llamada al frontend para mostrar en UI
+            # (esto lo mejoraremos después con WebSocket o polling)
 
             time.sleep(180)  # cada 3 minutos
 
