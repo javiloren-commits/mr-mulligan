@@ -800,7 +800,7 @@ def seleccionar_hueco(huecos_pref, huecos_alt, franja, modo_hora):
     elif modo_hora == "tarde":
         zona_inicio = desde_min + 2 * rango // 3
         zona_fin = hasta_min
-        elegir = "centro"
+        elegir = "ultimo"  # más tarde posible
     elif modo_hora == "pronto_mitad":
         zona_inicio = desde_min
         zona_fin = desde_min + 2 * rango // 3
@@ -825,7 +825,9 @@ def seleccionar_hueco(huecos_pref, huecos_alt, franja, modo_hora):
     def score(h):
         m = time_to_minutes(h["hora"])
         if elegir == "primero":
-            return m  # menor = mejor
+            return m           # menor = mejor (más temprano)
+        elif elegir == "ultimo":
+            return -m          # mayor = mejor (más tarde)
         else:
             return abs(m - centro_zona)  # más cercano al centro = mejor
 
@@ -956,7 +958,7 @@ def sniper_loop(fecha, params):
         stop_event = snipers[fecha]["stop_event"]
         poll_interval = snipers[fecha]["poll_interval"]
 
-    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3"}
+    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3", "11,13": "Norte o Sur 18h"}
     print(f"[Sniper:{fecha}] Iniciando. Tipo:{tipo} {desde}-{hasta} Jugadores:{jugadores} Intervalo:{poll_interval}s")
 
     while not stop_event.is_set():
@@ -1020,7 +1022,7 @@ def sniper_loop(fecha, params):
             f"⛳ <b>¡Reserva confirmada!</b>\n\n"
             f"📅 <b>Fecha:</b> {fecha_fmt}\n"
             f"🕐 <b>Hora:</b> {hora}\n"
-            f"🏌️ <b>Campo:</b> {tipo_nombre.get(tipo, str(tipo))}\n"
+            f"🏌️ <b>Campo:</b> {hueco.get('descripcion','').strip() or tipo_nombre.get(cod_instalacion, str(cod_instalacion))}\n"
             f"👥 <b>Jugadores:</b> {len(jugadores)}\n"
             f"🔖 <b>Ref:</b> #{reserva_id}"
         )
@@ -1061,7 +1063,7 @@ def mejora_loop(key, params):
         stop_event = snipers[key]["stop_event"]
         poll_interval = snipers[key]["poll_interval"]
 
-    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3"}
+    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3", "11,13": "Norte o Sur 18h"}
     print(f"[Mejora:{reserva_id}] Iniciando. Actual:{hora_actual} Buscando:{desde}-{hasta} tipo:{tipo} modo={modo_hora}")
 
     while not stop_event.is_set():
@@ -1166,7 +1168,7 @@ def mejora_loop(key, params):
             f"🔄 <b>¡Reserva mejorada!</b>\n\n"
             f"📅 <b>Fecha:</b> {fecha_fmt}\n"
             f"🕐 <b>Antes:</b> {hora_actual} → <b>Ahora:</b> {hora_nueva}\n"
-            f"🏌️ <b>Campo:</b> {tipo_nombre.get(cod_inst_nueva, str(cod_inst_nueva))}\n"
+            f"🏌️ <b>Campo:</b> {hueco.get('descripcion','').strip() or tipo_nombre.get(cod_inst_nueva, str(cod_inst_nueva))}\n"
             f"🔖 <b>Ref:</b> #{reserva_id}"
         )
         break
