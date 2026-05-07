@@ -775,45 +775,133 @@ def parsear_huecos(instalaciones_data, desde, hasta):
     return huecos
 
 
-def filtrar_por_instalacion(huecos, tipo, preferencia=None):
+def seleccionar_hueco(huecos_pref, huecos_alt, franja, modo_hora):
     """
-    Filtra y prioriza huecos según tipo y preferencia.
-    tipo puede ser un int (instalación única) o string "11,13" (búsqueda dual).
-    Si es dual: busca en ambas instalaciones y devuelve lista ordenada por hora
-    priorizando el campo preferido cuando hay coincidencia de hora.
+    Selecciona el mejor hueco según modo_hora y preferencia de campo.
+    franja: (desde_min, hasta_min) en minutos
+    modo_hora: "pronto" | "mitad" | "tarde" | "pronto_mitad" | "mitad_tarde"
+    Lógica:
+      - Calcular zona objetivo dentro de la franja
+      - Buscar en zona: primero preferido, luego alternativo
+      - Si no hay nada en zona: buscar en toda la franja
     """
-    # Modo dual: tipo es string "11,13"
-    if isinstance(tipo, str) and "," in tipo:
-        tipos = [int(t) for t in tipo.split(",")]
-        # Asegurar que preferencia es int para comparar con tipos
-        try:
-            pref_int = int(preferencia) if preferencia is not None else None
-        except (ValueError, TypeError):
-            pref_int = None
-        preferido = pref_int if pref_int in tipos else tipos[0]
-        no_preferido = [t for t in tipos if t != preferido][0]
+    desde_min, hasta_min = franja
+    rango = hasta_min - desde_min
 
-        huecos_pref = [h for h in huecos if h["cod_instalacion"] == preferido]
-        huecos_nopref = [h for h in huecos if h["cod_instalacion"] == no_preferido]
+    # Definir zona objetivo según modo
+    if modo_hora == "pronto":
+        zona_inicio = desde_min
+        zona_fin = desde_min + rango // 3
+        elegir = "primero"   # más temprano
+    elif modo_hora == "mitad":
+        zona_inicio = desde_min + rango // 3
+        zona_fin = desde_min + 2 * rango // 3
+        elegir = "centro"
+    elif modo_hora == "tarde":
+        zona_inicio = desde_min + 2 * rango // 3
+        zona_fin = hasta_min
+        elegir = "centro"
+    elif modo_hora == "pronto_mitad":
+        zona_inicio = desde_min
+        zona_fin = desde_min + 2 * rango // 3
+        elegir = "centro"
+    elif modo_hora == "mitad_tarde":
+        zona_inicio = desde_min + rango // 3
+        zona_fin = hasta_min
+        elegir = "centro"
+    else:
+        # Sin preferencia de horario: más temprano del preferido
+        zona_inicio = desde_min
+        zona_fin = hasta_min
+        elegir = "primero"
 
-        print(f"[filtrar] Dual: preferido={preferido}({len(huecos_pref)} huecos) alternativo={no_preferido}({len(huecos_nopref)} huecos)")
+    centro_zona = (zona_inicio + zona_fin) // 2
+    print(f"[seleccionar] modo={modo_hora} zona={zona_inicio}-{zona_fin} centro={centro_zona} elegir={elegir}")
 
-        # Prioridad absoluta: si hay huecos en el campo preferido, usar solo esos.
-        # Solo caer al alternativo si el preferido no tiene nada en toda la franja.
-        if huecos_pref:
-            return huecos_pref
-        if huecos_nopref:
-            print(f"[filtrar] Sin huecos en preferido, usando alternativo {no_preferido}")
-            return huecos_nopref
-        return []
+    def en_zona(h):
+        m = time_to_minutes(h["hora"])
+        return zona_inicio <= m <= zona_fin
 
-    # Modo simple: tipo es int
-    tipo_int = int(tipo) if isinstance(tipo, str) else tipo
-    filtrados = [h for h in huecos if h["cod_instalacion"] == tipo_int]
-    if filtrados:
+    def score(h):
+        m = time_to_minutes(h["hora"])
+        if elegir == "primero":
+            return m  # menor = mejor
+        else:
+            return abs(m - centro_zona)  # más cercano al centro = mejor
+
+    # 1. Preferido en zona
+    candidatos = [h for h in huecos_pref if en_zona(h)]
+    if candidatos:
+        elegido = min(candidatos, key=score)
+        print(f"[seleccionar] Preferido en zona: {elegido['hora']} ({elegido['descripcion'].strip()})")
+        return elegido
+
+    # 2. Alternativo en zona
+    candidatos = [h for h in huecos_alt if en_zona(h)]
+    if candidatos:
+        elegido = min(candidatos, key=score)
+        print(f"[seleccionar] Alternativo en zona: {elegido['hora']} ({elegido['descripcion'].strip()})")
+        return elegido
+
+    # 3. Preferido en toda la franja
+    if huecos_pref:
+        elegido = min(huecos_pref, key=score)
+        print(f"[seleccionar] Preferido fuera de zona: {elegido['hora']}")
+        return elegido
+
+    # 4. Alternativo en toda la franja
+    if huecos_alt:
+        elegido = min(huecos_alt, key=score)
+        print(f"[seleccionar] Alternativo fuera de zona: {elegido['hora']}")
+        return elegido
+
+    return None
+
+
+def filtrar_por_instalacion(huecos, tipo, preferencia=None, modo_hora=None, desde=None, hasta=None):
+    """
+    Filtra huecos y selecciona el mejor según campo preferido y modo horario.
+    Devuelve lista con UN solo hueco (el seleccionado) o lista ordenada si no hay modo_hora.
+    """
+    # Modo simple: tipo es int o string sin coma
+    if not (isinstance(tipo, str) and "," in tipo):
+        tipo_int = int(tipo) if isinstance(tipo, str) else tipo
+        filtrados = [h for h in huecos if h["cod_instalacion"] == tipo_int]
+        if not filtrados:
+            print(f"[filtrar] Sin huecos para instalación {tipo_int}")
+            return []
+        if modo_hora and desde and hasta:
+            franja = (time_to_minutes(desde), time_to_minutes(hasta))
+            elegido = seleccionar_hueco(filtrados, [], franja, modo_hora)
+            return [elegido] if elegido else filtrados
         print(f"[filtrar] {len(filtrados)} huecos para instalación {tipo_int}")
         return filtrados
-    print(f"[filtrar] Sin huecos para instalación {tipo_int}")
+
+    # Modo dual: tipo es "11,13"
+    tipos = [int(t) for t in tipo.split(",")]
+    try:
+        pref_int = int(preferencia) if preferencia is not None else None
+    except (ValueError, TypeError):
+        pref_int = None
+    preferido = pref_int if pref_int in tipos else tipos[0]
+    no_preferido = [t for t in tipos if t != preferido][0]
+
+    huecos_pref = [h for h in huecos if h["cod_instalacion"] == preferido]
+    huecos_nopref = [h for h in huecos if h["cod_instalacion"] == no_preferido]
+
+    print(f"[filtrar] Dual: preferido={preferido}({len(huecos_pref)}) alt={no_preferido}({len(huecos_nopref)}) modo={modo_hora}")
+
+    if modo_hora and desde and hasta:
+        franja = (time_to_minutes(desde), time_to_minutes(hasta))
+        elegido = seleccionar_hueco(huecos_pref, huecos_nopref, franja, modo_hora)
+        return [elegido] if elegido else []
+
+    # Sin modo_hora: preferido primero, alternativo si no hay
+    if huecos_pref:
+        return huecos_pref
+    if huecos_nopref:
+        print(f"[filtrar] Sin preferido, usando alternativo {no_preferido}")
+        return huecos_nopref
     return []
 
 
@@ -862,6 +950,7 @@ def sniper_loop(fecha, params):
     hasta = params["hasta"]
     jugadores = params["jugadores"]
     preferencia = params.get("preferencia")  # instalación preferida en modo dual
+    modo_hora = params.get("modo_hora")      # pronto | mitad | tarde | pronto_mitad | mitad_tarde
 
     with snipers_lock:
         stop_event = snipers[fecha]["stop_event"]
@@ -886,7 +975,7 @@ def sniper_loop(fecha, params):
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
-        huecos = filtrar_por_instalacion(huecos, tipo, preferencia)
+        huecos = filtrar_por_instalacion(huecos, tipo, preferencia, modo_hora, desde, hasta)
         print(f"[Sniper:{fecha}] Huecos tipo {tipo}: {[h['hora'] for h in huecos]}")
 
         if not huecos:
@@ -966,13 +1055,14 @@ def mejora_loop(key, params):
     hasta = params["hasta"]
     jugadores = params["jugadores"]
     preferencia = params.get("preferencia")
+    modo_hora = params.get("modo_hora")
 
     with snipers_lock:
         stop_event = snipers[key]["stop_event"]
         poll_interval = snipers[key]["poll_interval"]
 
     tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3"}
-    print(f"[Mejora:{reserva_id}] Iniciando. Actual:{hora_actual} Buscando:{desde}-{hasta} tipo:{tipo}")
+    print(f"[Mejora:{reserva_id}] Iniciando. Actual:{hora_actual} Buscando:{desde}-{hasta} tipo:{tipo} modo={modo_hora}")
 
     while not stop_event.is_set():
         with snipers_lock:
@@ -989,7 +1079,7 @@ def mejora_loop(key, params):
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
-        huecos = filtrar_por_instalacion(huecos, tipo, preferencia)
+        huecos = filtrar_por_instalacion(huecos, tipo, preferencia, modo_hora, desde, hasta)
 
         # Solo considerar huecos MEJORES que el actual (hora más temprana)
         huecos_mejores = [h for h in huecos if h["hora"] < hora_actual]
