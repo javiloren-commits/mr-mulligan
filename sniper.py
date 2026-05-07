@@ -1,3 +1,4 @@
+import json
 """
 Mr. Mulligan – Backend Flask
 RSHECC Golf Auto-Booking Sniper
@@ -87,51 +88,30 @@ def contactos_endpoint():
     jugador_id = body.get("jugadorId", "")
 
     try:
+        # El endpoint correcto es partidoscontactos
+        # Respuesta: {"PartidosContactosResult": {"Valor": "{"Contactos":[...]}"}}
+        # Valor es un string JSON que hay que parsear por separado
+        url = f"{BASE_URL}/Jugadores/json/partidoscontactos/{CENTRO},{jugador_id},{PROCEDENCIA},{IDIOMA}"
+        print(f"[contactos] GET {url}")
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        print(f"[contactos] HTTP {r.status_code}")
+        data = r.json()
+
+        result = data.get("PartidosContactosResult", {})
+        valor_str = result.get("Valor", "")
+
+        # Valor es un string JSON — hay que parsearlo
+        valor = json.loads(valor_str) if isinstance(valor_str, str) and valor_str else {}
+        lista = valor.get("Contactos", []) or []
+
         contactos = []
+        for j in lista:
+            cid = j.get("Codigo") or j.get("codigo")
+            nombre = j.get("Nombre") or j.get("nombre") or ""
+            if cid and nombre:
+                contactos.append({"id": cid, "nombre": nombre, "hcp": None})
 
-        # Intentar primero con relacionesabiertas (contactos frecuentes)
-        for endpoint in [
-            f"{BASE_URL}/Jugadores/json/relacionesabiertas/{CENTRO},{jugador_id}",
-            f"{BASE_URL}/Jugadores/json/partidoscontactos/{CENTRO},{jugador_id},{PROCEDENCIA},{IDIOMA}",
-        ]:
-            print(f"[contactos] GET {endpoint}")
-            r = requests.get(endpoint, headers=HEADERS, timeout=10)
-            print(f"[contactos] HTTP {r.status_code} - {r.text[:300]}")
-            if r.status_code != 200:
-                continue
-            data = r.json()
-
-            # Buscar lista en todas las claves posibles
-            lista = []
-            for key, val in data.items():
-                if isinstance(val, list) and len(val) > 0:
-                    lista = val
-                    print(f"[contactos] Lista en clave '{key}': {len(val)} items, ejemplo: {val[0]}")
-                    break
-                elif isinstance(val, dict):
-                    for k2, v2 in val.items():
-                        if isinstance(v2, list) and len(v2) > 0:
-                            lista = v2
-                            print(f"[contactos] Lista en '{key}.{k2}': {len(v2)} items, ejemplo: {v2[0]}")
-                            break
-
-            for j in lista:
-                if not isinstance(j, dict):
-                    continue
-                nombre_parts = [j.get("nombre",""), j.get("apellido","")]
-                nombre = " ".join(p for p in nombre_parts if p).strip() or j.get("NombreCompleto","")
-                cid = j.get("codigo") or j.get("IDJugador") or j.get("cod_jugador")
-                if cid and nombre:
-                    contactos.append({
-                        "id": cid,
-                        "nombre": nombre,
-                        "hcp": j.get("handicap") or j.get("Handicap"),
-                    })
-
-            if contactos:
-                break
-
-        print(f"[contactos] Total contactos: {len(contactos)}")
+        print(f"[contactos] Total: {len(contactos)}")
         return jsonify({"ok": True, "contactos": contactos})
     except Exception as e:
         print(f"[contactos] Error: {e}")
@@ -512,6 +492,16 @@ def parsear_huecos(instalaciones_data, desde, hasta):
     return huecos
 
 
+def filtrar_por_instalacion(huecos, tipo):
+    """Filtra huecos para que coincidan con el tipo de campo solicitado."""
+    filtrados = [h for h in huecos if h["cod_instalacion"] == tipo]
+    if filtrados:
+        print(f"[filtrar] {len(filtrados)} huecos para instalación {tipo}")
+        return filtrados
+    print(f"[filtrar] Sin huecos para instalación {tipo}")
+    return []
+
+
 def time_to_minutes(t):
     """Convierte HH:MM a minutos totales."""
     try:
@@ -572,7 +562,8 @@ def sniper_loop(params):
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
-        print(f"[Sniper] Huecos encontrados: {huecos}")
+        huecos = filtrar_por_instalacion(huecos, tipo)
+        print(f"[Sniper] Huecos encontrados para tipo {tipo}: {huecos}")
 
         if not huecos:
             sniper_state["mensaje"] = f"Sin huecos disponibles. Reintentando en {POLL_INTERVAL}s…"
