@@ -198,29 +198,18 @@ def fechas_endpoint():
         url = f"{BASE_URL}/Reservas/json/diaspermitidos/{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA}"
         r = requests.get(url, headers=HEADERS, timeout=10)
         data = r.json()
+        import re, datetime as dt
         dias = data.get("DiasPermitidosResult", []) or []
         fechas = []
         for d in dias:
-            hora_raw = d.get("fecha") or d.get("Fecha") or ""
-            if hora_raw:
-                fecha_str = unix_date_to_hhmm.__module__ and None  # just to reference
-                import re
+            # API devuelve lista de strings: "/Date(1778104800000+0200)/"
+            hora_raw = d if isinstance(d, str) else (d.get("fecha") or d.get("Fecha") or "") if isinstance(d, dict) else ""
+            if hora_raw and "/Date(" in hora_raw:
                 m = re.search(r"/Date\((\d+)", hora_raw)
                 if m:
-                    import datetime as dt
                     ts = int(m.group(1)) // 1000
                     fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
                     fechas.append(fecha_dt.strftime("%Y-%m-%d"))
-        # Si la API devuelve lista simple de timestamps
-        if not fechas:
-            for d in dias:
-                if isinstance(d, str) and "/Date(" in d:
-                    import re, datetime as dt
-                    m = re.search(r"/Date\((\d+)", d)
-                    if m:
-                        ts = int(m.group(1)) // 1000
-                        fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
-                        fechas.append(fecha_dt.strftime("%Y-%m-%d"))
         print(f"[fechas] {len(fechas)} fechas disponibles: {fechas[:5]}")
         return jsonify({"ok": True, "fechas": fechas})
     except Exception as e:
@@ -260,6 +249,18 @@ def reservas_endpoint():
     body = request.get_json()
     jugador_id = body.get("jugadorId")
     reservas = get_reservas(jugador_id)
+    # Limpiar snipers cuya reserva fue cancelada externamente
+    ids_activos = {r["id"] for r in reservas if r.get("id")}
+    with snipers_lock:
+        for key, s in list(snipers.items()):
+            if s["status"] == "reserved" and s.get("reserva"):
+                rid = s["reserva"].get("id")
+                if rid and rid not in ids_activos:
+                    print(f"[reservas] Reserva #{rid} cancelada externamente, limpiando {key}")
+                    s["status"] = "cancelled"
+                    s["mensaje"] = "Reserva cancelada externamente"
+                    s["reserva"] = None
+
     return jsonify({"ok": True, "reservas": reservas})
 
 
@@ -387,29 +388,40 @@ def do_login(usuario, clave):
         return {"ok": False, "error": f"Error de conexión: {str(e)}"}
 
 
+
+def get_instalaciones_dia_single(jugador_id, fecha_fmt, tipo_int):
+    url = f"{BASE_URL}/Reservas/json/instalacionesdia/{jugador_id},{fecha_fmt},{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA},5,7,{IDIOMA},{tipo_int}"
+    print(f"[instalacionesdia] GET {url}")
+    r = requests.get(url, headers=HEADERS, timeout=15)
+    print(f"[instalacionesdia] HTTP {r.status_code}")
+    if r.status_code != 200:
+        print(f"[instalacionesdia] Error: {r.text[:200]}")
+        return []
+    try:
+        data = r.json()
+        return data.get("InstalacionesDiaResult", []) or []
+    except Exception as e:
+        print(f"[instalacionesdia] Parse error: {e}")
+        return []
+
+
 def get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo):
-    """
-    Obtiene huecos disponibles para una fecha y tipo de campo.
-    Captura real: /instalacionesdia/33894,202605080000,24,6,6,5,7,1,4
-    Parámetros:   jugadorId, fechaHora, centro, deporte, procedencia, ?, ?, idioma, ?
-    """
     try:
         fecha_fmt = fecha.replace("-", "") + "0000"
-        # Usando exactamente la misma estructura que la captura de Charles,
-        # solo cambiando jugadorId, fechaHora y tipo de deporte
-        # Estructura captura: jugadorId, fechaHora, centro, deporte(6=golf), procedencia, ?, ?, idioma, tipoInstalacion
-        # El tipo de campo (11=Norte18, 13=Sur18...) va en la última posición
-        url = f"{BASE_URL}/Reservas/json/instalacionesdia/{jugador_id},{fecha_fmt},{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA},5,7,{IDIOMA},{tipo}"
-        print(f"[instalacionesdia] GET {url}")
-        r = requests.get(url, headers=HEADERS, timeout=15)
-        print(f"[instalacionesdia] HTTP {r.status_code}")
-        print(f"[instalacionesdia] Respuesta: {r.text[:1000]}")
-        data = r.json()
-        return data
+        if isinstance(tipo, str) and "," in tipo:
+            tipos = [int(t) for t in tipo.split(",")]
+            todos = []
+            for t in tipos:
+                todos.extend(get_instalaciones_dia_single(jugador_id, fecha_fmt, t))
+            print(f"[instalacionesdia] Dual {tipos}: {len(todos)} huecos totales")
+            return {"InstalacionesDiaResult": todos}
+        else:
+            tipo_int = int(tipo) if isinstance(tipo, str) else tipo
+            huecos = get_instalaciones_dia_single(jugador_id, fecha_fmt, tipo_int)
+            return {"InstalacionesDiaResult": huecos}
     except Exception as e:
         print(f"[instalacionesdia] Error: {e}")
         return None
-
 
 def get_tiempos(fecha, tipo):
     """Obtiene los tiempos (slots horarios) disponibles."""
