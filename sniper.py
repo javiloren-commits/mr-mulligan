@@ -168,11 +168,12 @@ def get_status():
             s = snipers[fecha]
             return jsonify({"fecha": fecha, "status": s["status"], "attempts": s["attempts"],
                             "mensaje": s["mensaje"], "error": s["error"], "reserva": s["reserva"],
-                            "pollInterval": s["poll_interval"]})
+                            "pollInterval": s["poll_interval"], "params": s["params"]})
         result = {}
         for f, s in snipers.items():
             result[f] = {"status": s["status"], "attempts": s["attempts"], "mensaje": s["mensaje"],
-                         "error": s["error"], "reserva": s["reserva"], "pollInterval": s["poll_interval"]}
+                         "error": s["error"], "reserva": s["reserva"], "pollInterval": s["poll_interval"],
+                         "params": s["params"]}
     return jsonify(result)
 
 
