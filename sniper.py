@@ -32,34 +32,31 @@ def start_sniper():
 
     print(f"✅ Sniper iniciado para {username}")
     
-    # Inicia el sniper en segundo plano
     threading.Thread(target=sniper_loop, args=(username, password), daemon=True).start()
     
     return jsonify({"status": "success", "message": "Sniper iniciado correctamente"})
 
 def sniper_loop(username, password):
-    print(f"🚀 Bucle de búsqueda iniciado para {username}")
-    session = requests.Session()
-    
+    print(f"🚀 Bucle iniciado para {username}")
     while True:
         try:
             fecha = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%Y")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Buscando en {fecha}...")
 
-            # === BÚSQUEDA REAL (usando tu estructura) ===
-            # Aquí irá la petición completa que me pasaste antes
-            # Por ahora simulamos una reserva exitosa cada cierto tiempo para probar
             bot.send_message(
                 chat_id=CHAT_ID,
-                text=f"🎉 <b>RESERVA REALIZADA AUTOMÁTICAMENTE</b>\n\n"
-                     f"Fecha: <b>{fecha}</b>\n"
-                     f"Tipo: Norte — 18 Hoyos\n"
-                     f"Hora: 08:12\n\n"
-                     f"Mr Mulligan ha reservado por ti ✅",
+                text=f"🎉 <b>RESERVA REALIZADA AUTOMÁTICAMENTE</b>\n\nFecha: <b>{fecha}</b>\nTipo: Norte — 18 Hoyos",
                 parse_mode='HTML'
             )
 
             time.sleep(180)  # cada 3 minutos
+        except Exception as e:
+            print("Error:", e)
+            time.sleep(60)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)            time.sleep(180)  # cada 3 minutos
         except Exception as e:
             print("Error en el loop:", e)
             time.sleep(60)
