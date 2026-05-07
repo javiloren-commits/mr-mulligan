@@ -41,16 +41,7 @@ POLL_INTERVAL = 30  # segundos entre intentos
 # ══════════════════════════════════════════════════════
 #  ESTADO GLOBAL DEL SNIPER
 # ══════════════════════════════════════════════════════
-sniper_state = {
-    "status": "idle",       # idle | searching | found | reserved | error
-    "attempts": 0,
-    "mensaje": "",
-    "error": "",
-    "reserva": None,        # dict con detalles de la reserva confirmada
-    "params": None,
-    "thread": None,
-    "stop_event": threading.Event(),
-}
+# sniper_state removed - using snipers dict
 
 
 # ══════════════════════════════════════════════════════
@@ -59,7 +50,9 @@ sniper_state = {
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "service": "Mr. Mulligan", "status": sniper_state["status"]})
+    with snipers_lock:
+        resumen = {f: {"status": s["status"], "attempts": s["attempts"]} for f, s in snipers.items()}
+    return jsonify({"ok": True, "service": "Mr. Mulligan", "snipers": resumen})
 
 
 @app.route("/login", methods=["POST"])
@@ -120,56 +113,67 @@ def contactos_endpoint():
 
 @app.route("/start", methods=["POST"])
 def start_sniper():
-    """Lanza el sniper en background."""
-    global sniper_state
-
-    # Si ya hay uno corriendo, detenerlo
-    if sniper_state["status"] == "searching":
-        sniper_state["stop_event"].set()
-        time.sleep(1)
-
+    """Lanza un sniper para una fecha concreta. Permite multiples en paralelo."""
     body = request.get_json()
     required = ["usuario", "clave", "jugadorId", "fecha", "tipo", "desde", "hasta", "jugadores"]
     for field in required:
         if field not in body:
             return jsonify({"ok": False, "error": f"Falta campo: {field}"})
 
-    # Resetear estado
-    sniper_state["stop_event"].clear()
-    sniper_state["status"] = "searching"
-    sniper_state["attempts"] = 0
-    sniper_state["mensaje"] = "Iniciando..."
-    sniper_state["error"] = ""
-    sniper_state["reserva"] = None
-    sniper_state["params"] = body
+    fecha = body["fecha"]
+    poll_interval = int(body.get("pollInterval", POLL_INTERVAL_DEFAULT))
+    poll_interval = max(10, min(300, poll_interval))
 
-    # Lanzar thread
+    with snipers_lock:
+        if fecha in snipers and snipers[fecha]["status"] == "searching":
+            snipers[fecha]["stop_event"].set()
+            time.sleep(0.5)
+        state = make_sniper_state()
+        state["status"] = "searching"
+        state["mensaje"] = "Iniciando..."
+        state["params"] = body
+        state["poll_interval"] = poll_interval
+        snipers[fecha] = state
+
     thread = threading.Thread(target=sniper_loop, args=(fecha, body), daemon=True)
-    sniper_state["thread"] = thread
+    with snipers_lock:
+        snipers[fecha]["thread"] = thread
     thread.start()
 
-    return jsonify({"ok": True, "mensaje": "Sniper iniciado"})
+    return jsonify({"ok": True, "fecha": fecha, "pollInterval": poll_interval, "mensaje": f"Sniper iniciado para {fecha}"})
 
 
 @app.route("/status", methods=["GET"])
 def get_status():
-    """Devuelve el estado actual del sniper."""
-    return jsonify({
-        "status": sniper_state["status"],
-        "attempts": sniper_state["attempts"],
-        "mensaje": sniper_state["mensaje"],
-        "error": sniper_state["error"],
-        "reserva": sniper_state["reserva"],
-    })
+    """Devuelve estado de todos los snipers, o uno concreto con ?fecha=."""
+    fecha = request.args.get("fecha")
+    with snipers_lock:
+        if fecha:
+            if fecha not in snipers:
+                return jsonify({"status": "idle", "attempts": 0, "mensaje": "", "error": "", "reserva": None})
+            s = snipers[fecha]
+            return jsonify({"fecha": fecha, "status": s["status"], "attempts": s["attempts"],
+                            "mensaje": s["mensaje"], "error": s["error"], "reserva": s["reserva"],
+                            "pollInterval": s["poll_interval"]})
+        result = {}
+        for f, s in snipers.items():
+            result[f] = {"status": s["status"], "attempts": s["attempts"], "mensaje": s["mensaje"],
+                         "error": s["error"], "reserva": s["reserva"], "pollInterval": s["poll_interval"]}
+    return jsonify(result)
 
 
 @app.route("/stop", methods=["POST"])
 def stop_sniper():
-    """Detiene el sniper."""
-    sniper_state["stop_event"].set()
-    sniper_state["status"] = "idle"
-    sniper_state["mensaje"] = "Búsqueda cancelada"
-    return jsonify({"ok": True})
+    """Detiene el sniper de una fecha o todos."""
+    body = request.get_json() or {}
+    fecha = body.get("fecha")
+    with snipers_lock:
+        targets = [fecha] if fecha and fecha in snipers else list(snipers.keys())
+        for f in targets:
+            snipers[f]["stop_event"].set()
+            snipers[f]["status"] = "idle"
+            snipers[f]["mensaje"] = "Busqueda cancelada"
+    return jsonify({"ok": True, "detenidos": targets})
 
 
 @app.route("/fechas", methods=["POST"])
