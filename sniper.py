@@ -603,12 +603,15 @@ def get_reservas(jugador_id):
                 if fecha_dt.date() < ahora.date():
                     continue
 
-            # Instalación
-            cod_inst = (
-                res.get("cod_instalacion") or res.get("instalacion") or
-                res.get("CodInstalacion") or res.get("Instalacion")
-            )
-            descripcion = res.get("descripcion") or res.get("Descripcion") or ""
+            # Instalación — viene como objeto anidado
+            inst_obj = res.get("instalacion")
+            if isinstance(inst_obj, dict):
+                cod_inst = inst_obj.get("codigo")
+                descs = inst_obj.get("descripciones") or []
+                descripcion = descs[0].get("Value", "").strip() if descs else ""
+            else:
+                cod_inst = res.get("cod_instalacion") or res.get("CodInstalacion")
+                descripcion = res.get("descripcion") or res.get("Descripcion") or ""
 
             # Jugadores
             jugadores_raw = res.get("jugadores") or res.get("Jugadores") or []
@@ -770,7 +773,12 @@ def filtrar_por_instalacion(huecos, tipo, preferencia=None):
     # Modo dual: tipo es string "11,13"
     if isinstance(tipo, str) and "," in tipo:
         tipos = [int(t) for t in tipo.split(",")]
-        preferido = preferencia if preferencia in tipos else tipos[0]
+        # Asegurar que preferencia es int para comparar con tipos
+        try:
+            pref_int = int(preferencia) if preferencia is not None else None
+        except (ValueError, TypeError):
+            pref_int = None
+        preferido = pref_int if pref_int in tipos else tipos[0]
         no_preferido = [t for t in tipos if t != preferido][0]
 
         huecos_pref = [h for h in huecos if h["cod_instalacion"] == preferido]
