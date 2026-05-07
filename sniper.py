@@ -208,18 +208,37 @@ def do_login(usuario, clave):
         r = requests.get(url, headers=HEADERS, params=params, timeout=10)
         data = r.json()
 
-        result = data.get("LoginResult", {})
-        if result.get("StatusOK"):
-            jugador = result.get("Jugador", {})
-            jugador_id = jugador.get("IDJugador") or result.get("IDJugador")
-            nombre = jugador.get("NombreCompleto") or jugador.get("Nombre") or usuario
-            return {
-                "ok": True,
-                "jugadorId": jugador_id,
-                "nombre": nombre,
-            }
+        print(f"[login] Respuesta: {str(data)[:2000]}")
+
+        # La API puede devolver el resultado bajo distintas claves raíz
+        result = (
+            data.get("LoginResult") or
+            data.get("loginResult") or
+            data.get("Login") or
+            data
+        )
+
+        status_ok = (
+            result.get("StatusOK") or
+            result.get("statusOK") or
+            result.get("Status") == "OK"
+        )
+
+        if status_ok:
+            jugador = result.get("Jugador") or result.get("DatosJugador") or {}
+            jugador_id = (
+                jugador.get("IDJugador") or jugador.get("Id") or
+                result.get("IDJugador") or result.get("IdJugador")
+            )
+            nombre = (
+                jugador.get("NombreCompleto") or jugador.get("Nombre") or
+                result.get("NombreCompleto") or result.get("Nombre") or
+                usuario
+            )
+            print(f"[login] OK - jugadorId={jugador_id} nombre={nombre}")
+            return {"ok": True, "jugadorId": jugador_id, "nombre": nombre}
         else:
-            msg = result.get("Mensaje", "Credenciales incorrectas")
+            msg = result.get("Mensaje") or result.get("mensaje") or "Credenciales incorrectas"
             return {"ok": False, "error": msg}
     except Exception as e:
         return {"ok": False, "error": f"Error de conexión: {str(e)}"}
