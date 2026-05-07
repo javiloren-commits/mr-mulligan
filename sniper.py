@@ -87,43 +87,51 @@ def contactos_endpoint():
     jugador_id = body.get("jugadorId", "")
 
     try:
-        url = f"{BASE_URL}/Jugadores/json/partidoscontactos/{CENTRO},{jugador_id},{PROCEDENCIA},{IDIOMA}"
-        print(f"[contactos] GET {url}")
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        print(f"[contactos] HTTP {r.status_code} - {r.text[:500]}")
-        data = r.json()
-
-        # Buscar la lista en distintas claves posibles
         contactos = []
-        result = None
-        for key in data:
-            if "Result" in key or "result" in key:
-                result = data[key]
-                print(f"[contactos] Clave resultado: {key}, claves internas: {list(result.keys()) if isinstance(result, dict) else type(result)}")
+
+        # Intentar primero con relacionesabiertas (contactos frecuentes)
+        for endpoint in [
+            f"{BASE_URL}/Jugadores/json/relacionesabiertas/{CENTRO},{jugador_id}",
+            f"{BASE_URL}/Jugadores/json/partidoscontactos/{CENTRO},{jugador_id},{PROCEDENCIA},{IDIOMA}",
+        ]:
+            print(f"[contactos] GET {endpoint}")
+            r = requests.get(endpoint, headers=HEADERS, timeout=10)
+            print(f"[contactos] HTTP {r.status_code} - {r.text[:300]}")
+            if r.status_code != 200:
+                continue
+            data = r.json()
+
+            # Buscar lista en todas las claves posibles
+            lista = []
+            for key, val in data.items():
+                if isinstance(val, list) and len(val) > 0:
+                    lista = val
+                    print(f"[contactos] Lista en clave '{key}': {len(val)} items, ejemplo: {val[0]}")
+                    break
+                elif isinstance(val, dict):
+                    for k2, v2 in val.items():
+                        if isinstance(v2, list) and len(v2) > 0:
+                            lista = v2
+                            print(f"[contactos] Lista en '{key}.{k2}': {len(v2)} items, ejemplo: {v2[0]}")
+                            break
+
+            for j in lista:
+                if not isinstance(j, dict):
+                    continue
+                nombre_parts = [j.get("nombre",""), j.get("apellido","")]
+                nombre = " ".join(p for p in nombre_parts if p).strip() or j.get("NombreCompleto","")
+                cid = j.get("codigo") or j.get("IDJugador") or j.get("cod_jugador")
+                if cid and nombre:
+                    contactos.append({
+                        "id": cid,
+                        "nombre": nombre,
+                        "hcp": j.get("handicap") or j.get("Handicap"),
+                    })
+
+            if contactos:
                 break
-        if result is None:
-            result = data
 
-        # Buscar lista de jugadores en distintas claves
-        lista = (
-            result.get("Jugadores") or result.get("jugadores") or
-            result.get("Contactos") or result.get("contactos") or
-            result.get("Partidos") or []
-        ) or []
-
-        print(f"[contactos] Jugadores encontrados: {len(lista)}")
-        if lista:
-            print(f"[contactos] Ejemplo: {lista[0]}")
-
-        for j in lista:
-            nombre_parts = [j.get("nombre",""), j.get("apellido","")]
-            nombre = " ".join(p for p in nombre_parts if p).strip() or j.get("NombreCompleto","")
-            contactos.append({
-                "id": j.get("codigo") or j.get("IDJugador"),
-                "nombre": nombre,
-                "hcp": j.get("Handicap") or j.get("handicap"),
-            })
-
+        print(f"[contactos] Total contactos: {len(contactos)}")
         return jsonify({"ok": True, "contactos": contactos})
     except Exception as e:
         print(f"[contactos] Error: {e}")
@@ -393,99 +401,68 @@ def pagar_reserva(reserva_id, jugador_id, ticket_data):
         return {"ok": False, "error": str(e)}
 
 
+def unix_date_to_hhmm(date_str):
+    """
+    Convierte /Date(1778221200000+0200)/ a HH:MM en hora local (Europe/Madrid).
+    """
+    import re
+    m = re.search(r'/Date\((\d+)([+-]\d+)?\)/', str(date_str))
+    if not m:
+        return None
+    ms = int(m.group(1))
+    offset_str = m.group(2) or "+0000"
+    # Calcular offset en minutos
+    sign = 1 if offset_str[0] == "+" else -1
+    offset_h = int(offset_str[1:3])
+    offset_m = int(offset_str[3:5])
+    offset_min = sign * (offset_h * 60 + offset_m)
+    # Convertir a hora local
+    total_min = ms // 1000 // 60 + offset_min
+    h = (total_min // 60) % 24
+    m2 = total_min % 60
+    return f"{h:02d}:{m2:02d}"
+
+
 def parsear_huecos(instalaciones_data, desde, hasta):
     """
     Extrae huecos disponibles dentro de la franja horaria.
-    Prueba múltiples estructuras posibles del JSON.
+    La API devuelve lista directa en InstalacionesDiaResult.
+    Todos los items son huecos disponibles (los ocupados no aparecen).
+    La hora viene en formato Unix: /Date(timestamp+offset)/
     """
     huecos = []
-    print(f"[parsear_huecos] Claves raíz: {list(instalaciones_data.keys())}")
-
     try:
         desde_min = time_to_minutes(desde)
         hasta_min = time_to_minutes(hasta)
 
-        # Buscar la clave principal del resultado (puede variar)
-        result = None
-        for key in instalaciones_data:
-            if "Result" in key or "result" in key or "Instalacion" in key:
-                result = instalaciones_data[key]
-                print(f"[parsear_huecos] Usando clave: {key}")
-                break
+        # La API devuelve: {"InstalacionesDiaResult": [ {codigo, hora, ...}, ... ]}
+        candidatos = instalaciones_data.get("InstalacionesDiaResult", []) or []
+        if isinstance(candidatos, dict):
+            # Por si acaso viene como dict
+            candidatos = list(candidatos.values())
 
-        if result is None:
-            result = instalaciones_data
-            print(f"[parsear_huecos] Usando raíz directamente")
-
-        print(f"[parsear_huecos] Tipo result: {type(result)}, claves: {list(result.keys()) if isinstance(result, dict) else 'lista'}")
-
-        # Buscar lista de huecos/horarios en distintas estructuras posibles
-        candidatos = []
-
-        if isinstance(result, dict):
-            # Opción A: result tiene lista "Instalaciones"
-            if "Instalaciones" in result:
-                for inst in (result["Instalaciones"] or []):
-                    for h in (inst.get("Horarios") or inst.get("Huecos") or []):
-                        candidatos.append(h)
-
-            # Opción B: result tiene lista "Horarios" directa
-            elif "Horarios" in result:
-                candidatos = result["Horarios"] or []
-
-            # Opción C: result tiene lista "Huecos"
-            elif "Huecos" in result:
-                candidatos = result["Huecos"] or []
-
-            # Opción D: buscar cualquier lista dentro del result
-            else:
-                for key, val in result.items():
-                    if isinstance(val, list) and len(val) > 0:
-                        print(f"[parsear_huecos] Lista encontrada en clave '{key}': {len(val)} items")
-                        # Mostrar primer elemento para entender estructura
-                        print(f"[parsear_huecos] Primer item: {val[0]}")
-                        candidatos = val
-                        break
-
-        elif isinstance(result, list):
-            candidatos = result
-
-        print(f"[parsear_huecos] Candidatos encontrados: {len(candidatos)}")
-        if candidatos:
-            print(f"[parsear_huecos] Ejemplo de candidato: {candidatos[0]}")
+        print(f"[parsear_huecos] Total huecos recibidos: {len(candidatos)}")
 
         for h in candidatos:
-            if not isinstance(h, dict):
+            hora_raw = h.get("hora") or h.get("Hora") or ""
+            if not hora_raw:
                 continue
 
-            # Buscar campo de hora (distintos nombres posibles)
-            hora_str = (
-                h.get("Hora") or h.get("hora") or
-                h.get("HoraInicio") or h.get("Horario") or
-                h.get("Time") or ""
-            )
+            hora_str = unix_date_to_hhmm(hora_raw)
             if not hora_str:
                 continue
 
-            hora_str = str(hora_str)
-            # Normalizar: HHMM → HH:MM
-            if ":" not in hora_str and len(hora_str) == 4:
-                hora_str = hora_str[:2] + ":" + hora_str[2:]
-
             hora_min = time_to_minutes(hora_str)
+            if desde_min <= hora_min <= hasta_min:
+                # Guardar hora y codigo de instalación para reservar
+                huecos.append({
+                    "hora": hora_str,
+                    "cod_instalacion": h.get("codigo"),
+                    "descripcion": h.get("descripcion", ""),
+                })
 
-            # Buscar campo disponibilidad (distintos nombres posibles)
-            disponible = (
-                h.get("Disponible") or h.get("disponible") or
-                h.get("EsLibre") or h.get("Libre") or
-                h.get("Available") or False
-            )
-
-            if disponible and desde_min <= hora_min <= hasta_min:
-                huecos.append(hora_str)
-
-        huecos.sort()
-        print(f"[parsear_huecos] Huecos en franja {desde}-{hasta}: {huecos}")
+        huecos.sort(key=lambda x: x["hora"])
+        print(f"[parsear_huecos] Huecos en franja {desde}-{hasta}: {[h['hora'] for h in huecos]}")
 
     except Exception as e:
         print(f"[parsear_huecos] Error: {e}")
@@ -563,13 +540,15 @@ def sniper_loop(params):
             continue
 
         # 2. ¡Hueco encontrado! Intentar reservar el primero (más temprano)
-        hora = huecos[0]
+        hueco = huecos[0]
+        hora = hueco["hora"]
+        cod_instalacion = hueco["cod_instalacion"]
         sniper_state["status"] = "found"
         sniper_state["mensaje"] = f"¡Hueco a las {hora}! Reservando…"
-        print(f"[Sniper] Hueco encontrado a las {hora}. Reservando...")
+        print(f"[Sniper] Hueco encontrado a las {hora} (instalación {cod_instalacion}). Reservando...")
 
         # 3. Crear reserva
-        res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, tipo, jugadores)
+        res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores)
 
         if not res_crear["ok"]:
             print(f"[Sniper] Error creando reserva: {res_crear['error']}")
