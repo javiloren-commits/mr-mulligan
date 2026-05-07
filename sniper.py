@@ -531,101 +531,87 @@ def send_telegram(mensaje):
 #  BUCLE PRINCIPAL DEL SNIPER
 # ══════════════════════════════════════════════════════
 
-def sniper_loop(params):
-    """Bucle que busca y reserva continuamente hasta encontrar hueco o ser detenido."""
-    global sniper_state
+def sniper_loop(fecha, params):
+    """Bucle independiente por fecha. Lee/escribe solo su propio estado en snipers[fecha]."""
+
+    def set_state(**kwargs):
+        with snipers_lock:
+            if fecha in snipers:
+                snipers[fecha].update(kwargs)
 
     usuario = params["usuario"]
     clave = params["clave"]
     jugador_id = params["jugadorId"]
-    fecha = params["fecha"]
     tipo = params["tipo"]
     desde = params["desde"]
     hasta = params["hasta"]
     jugadores = params["jugadores"]
 
-    print(f"[Sniper] Iniciando. Fecha:{fecha} Tipo:{tipo} {desde}-{hasta} Jugadores:{jugadores}")
+    with snipers_lock:
+        stop_event = snipers[fecha]["stop_event"]
+        poll_interval = snipers[fecha]["poll_interval"]
 
-    while not sniper_state["stop_event"].is_set():
-        sniper_state["attempts"] += 1
-        intento = sniper_state["attempts"]
+    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3"}
+    print(f"[Sniper:{fecha}] Iniciando. Tipo:{tipo} {desde}-{hasta} Jugadores:{jugadores} Intervalo:{poll_interval}s")
 
-        print(f"[Sniper] Intento #{intento}")
-        sniper_state["mensaje"] = f"Buscando huecos en {desde}–{hasta}…"
+    while not stop_event.is_set():
+        with snipers_lock:
+            poll_interval = snipers[fecha]["poll_interval"]
+            snipers[fecha]["attempts"] += 1
+            intento = snipers[fecha]["attempts"]
 
-        # 1. Buscar huecos disponibles
+        print(f"[Sniper:{fecha}] Intento #{intento}")
+        set_state(mensaje=f"Buscando huecos en {desde}–{hasta}… (cada {poll_interval}s)")
+
         instalaciones = get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo)
-
         if instalaciones is None:
-            sniper_state["mensaje"] = "Error consultando disponibilidad"
-            time.sleep(POLL_INTERVAL)
+            set_state(mensaje="Error consultando disponibilidad")
+            stop_event.wait(poll_interval)
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
         huecos = filtrar_por_instalacion(huecos, tipo)
-        print(f"[Sniper] Huecos encontrados para tipo {tipo}: {huecos}")
+        print(f"[Sniper:{fecha}] Huecos tipo {tipo}: {[h['hora'] for h in huecos]}")
 
         if not huecos:
-            sniper_state["mensaje"] = f"Sin huecos disponibles. Reintentando en {POLL_INTERVAL}s…"
-            time.sleep(POLL_INTERVAL)
+            set_state(mensaje=f"Sin huecos. Reintentando en {poll_interval}s…")
+            stop_event.wait(poll_interval)
             continue
 
-        # 2. ¡Hueco encontrado! Intentar reservar el primero (más temprano)
         hueco = huecos[0]
         hora = hueco["hora"]
         cod_instalacion = hueco["cod_instalacion"]
-        sniper_state["status"] = "found"
-        sniper_state["mensaje"] = f"¡Hueco a las {hora}! Reservando…"
-        print(f"[Sniper] Hueco encontrado a las {hora} (instalación {cod_instalacion}). Reservando...")
+        set_state(status="found", mensaje=f"¡Hueco a las {hora}! Reservando…")
+        print(f"[Sniper:{fecha}] Hueco a las {hora} (instalación {cod_instalacion}). Reservando...")
 
-        # 3. Crear reserva
         res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores)
-
         if not res_crear["ok"]:
-            print(f"[Sniper] Error creando reserva: {res_crear['error']}")
-            sniper_state["status"] = "searching"
-            sniper_state["mensaje"] = f"Hueco ocupado ({res_crear['error']}). Buscando otro…"
-            time.sleep(5)
+            print(f"[Sniper:{fecha}] Error reserva: {res_crear['error']}")
+            set_state(status="searching", mensaje=f"Error: {res_crear['error']}. Reintentando…")
+            stop_event.wait(5)
             continue
 
         reserva_id = res_crear["reservaId"]
-        print(f"[Sniper] Reserva creada: ID={reserva_id}")
-
-        # 4. Crear ticket
         ticket_res = crear_ticket(reserva_id, jugador_id)
         if not ticket_res["ok"]:
-            print(f"[Sniper] Error ticket: {ticket_res['error']}")
-            # Continuar buscando
-            sniper_state["status"] = "searching"
-            time.sleep(5)
+            set_state(status="searching")
+            stop_event.wait(5)
             continue
 
-        # 5. Pagar/confirmar reserva
         pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_res["ticket"])
         if not pago_res["ok"]:
-            print(f"[Sniper] Error pago: {pago_res['error']}")
-            sniper_state["status"] = "searching"
-            time.sleep(5)
+            set_state(status="searching")
+            stop_event.wait(5)
             continue
 
-        # ¡ÉXITO!
-        tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3"}
         fecha_fmt = datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
-
-        sniper_state["status"] = "reserved"
-        sniper_state["reserva"] = {
-            "id": reserva_id,
-            "fecha": fecha_fmt,
-            "hora": hora,
-            "tipo": tipo,
-            "jugadores": jugadores,
-        }
-        sniper_state["mensaje"] = "¡Reserva confirmada!"
-
-        print(f"[Sniper] ✅ RESERVA CONFIRMADA: {fecha_fmt} {hora} {tipo_nombre.get(tipo, tipo)}")
-
-        # Notificar por Telegram
-        msg_telegram = (
+        set_state(
+            status="reserved",
+            mensaje="¡Reserva confirmada!",
+            reserva={"id": reserva_id, "fecha": fecha_fmt, "hora": hora, "tipo": tipo, "jugadores": jugadores},
+        )
+        print(f"[Sniper:{fecha}] ✅ CONFIRMADA: {fecha_fmt} {hora} {tipo_nombre.get(tipo, tipo)}")
+        send_telegram(
             f"⛳ <b>¡Reserva confirmada!</b>\n\n"
             f"📅 <b>Fecha:</b> {fecha_fmt}\n"
             f"🕐 <b>Hora:</b> {hora}\n"
@@ -633,15 +619,13 @@ def sniper_loop(params):
             f"👥 <b>Jugadores:</b> {len(jugadores)}\n"
             f"🔖 <b>Ref:</b> #{reserva_id}"
         )
-        send_telegram(msg_telegram)
+        break
 
-        break  # Salir del bucle
-
-    if sniper_state["status"] == "searching":
-        sniper_state["status"] = "idle"
-        sniper_state["mensaje"] = "Búsqueda detenida"
-
-    print(f"[Sniper] Finalizado con estado: {sniper_state['status']}")
+    with snipers_lock:
+        if fecha in snipers and snipers[fecha]["status"] == "searching":
+            snipers[fecha]["status"] = "idle"
+            snipers[fecha]["mensaje"] = "Búsqueda detenida"
+    print(f"[Sniper:{fecha}] Finalizado")
 
 
 # ══════════════════════════════════════════════════════
