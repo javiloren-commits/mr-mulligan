@@ -144,7 +144,7 @@ def start_sniper():
     sniper_state["params"] = body
 
     # Lanzar thread
-    thread = threading.Thread(target=sniper_loop, args=(body,), daemon=True)
+    thread = threading.Thread(target=sniper_loop, args=(fecha, body), daemon=True)
     sniper_state["thread"] = thread
     thread.start()
 
@@ -170,6 +170,56 @@ def stop_sniper():
     sniper_state["status"] = "idle"
     sniper_state["mensaje"] = "Búsqueda cancelada"
     return jsonify({"ok": True})
+
+
+@app.route("/reservas", methods=["POST"])
+def reservas_endpoint():
+    """Devuelve las reservas actuales del jugador."""
+    body = request.get_json()
+    jugador_id = body.get("jugadorId")
+    reservas = get_reservas(jugador_id)
+    return jsonify({"ok": True, "reservas": reservas})
+
+
+@app.route("/mover", methods=["POST"])
+def mover_endpoint():
+    """Inicia un sniper de mejora para una reserva existente."""
+    body = request.get_json()
+    required = ["usuario", "clave", "jugadorId", "reservaId", "fecha",
+                "hora_actual", "cod_instalacion_actual", "tipo", "desde", "hasta", "jugadores"]
+    for field in required:
+        if field not in body:
+            return jsonify({"ok": False, "error": f"Falta campo: {field}"})
+
+    reserva_id = body["reservaId"]
+    fecha = body["fecha"]
+    poll_interval = int(body.get("pollInterval", 60))
+    poll_interval = max(10, min(300, poll_interval))
+
+    # Verificar que la reserva es modificable
+    if not es_modificable(reserva_id):
+        return jsonify({"ok": False, "error": "Esta reserva no se puede modificar"})
+
+    # Usar clave única: "mejora_{reservaId}" para no colisionar con snipers de reserva nueva
+    key = f"mejora_{reserva_id}"
+
+    with snipers_lock:
+        if key in snipers and snipers[key]["status"] == "searching":
+            snipers[key]["stop_event"].set()
+            time.sleep(0.5)
+        state = make_sniper_state()
+        state["status"] = "searching"
+        state["mensaje"] = "Buscando mejora..."
+        state["params"] = body
+        state["poll_interval"] = poll_interval
+        snipers[key] = state
+
+    thread = threading.Thread(target=mejora_loop, args=(key, body), daemon=True)
+    with snipers_lock:
+        snipers[key]["thread"] = thread
+    thread.start()
+
+    return jsonify({"ok": True, "key": key, "mensaje": f"Buscando mejora para reserva #{reserva_id}"})
 
 
 @app.route("/anular", methods=["POST"])
@@ -365,6 +415,98 @@ def crear_ticket(reserva_id, jugador_id):
         return {"ok": False, "error": str(e)}
 
 
+def es_modificable(reserva_id):
+    """Verifica si una reserva puede modificarse."""
+    try:
+        url = f"{BASE_URL}/Reservas/json/esmodificable/{reserva_id},{PROCEDENCIA}"
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        data = r.json()
+        return data.get("EsModificableResult", False)
+    except Exception as e:
+        print(f"[esmodificable] Error: {e}")
+        return False
+
+
+def mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores):
+    """
+    Mueve una reserva existente a un nuevo horario/campo.
+    PUT /Reservas/json/moverreserva — mismo payload que CrearReserva pero con Codigo=reservaId.
+    """
+    try:
+        reserva = build_reserva_base(jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores)
+        reserva["Codigo"] = reserva_id  # ID de la reserva a mover
+        payload = {"reserva": reserva}
+
+        url = f"{BASE_URL}/Reservas/json/moverreserva"
+        print(f"[moverreserva] PUT {url} - reservaId={reserva_id} nueva_hora={hora_nueva} instalacion={cod_instalacion_nueva}")
+        r = requests.put(url, headers={**HEADERS, "Content-Type": "application/json"},
+                         json=payload, timeout=15)
+        print(f"[moverreserva] HTTP {r.status_code} - {r.text[:300]}")
+        data = r.json()
+        result = data.get("MoverReservaResult", {})
+        if result.get("StatusOK"):
+            print(f"[moverreserva] ✅ {result.get('Mensaje','')}")
+            return {"ok": True}
+        else:
+            msg = result.get("Mensaje") or "Error moviendo reserva"
+            print(f"[moverreserva] ❌ {msg}")
+            return {"ok": False, "error": msg}
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"ok": False, "error": str(e)}
+
+
+def marcar_cambio_pagado(reserva_id):
+    """Marca el cambio como pagado tras PagarReserva."""
+    try:
+        url = f"{BASE_URL}/Reservas/json/marcarcambiopagado/{reserva_id},{PROCEDENCIA},{IDIOMA}"
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        data = r.json()
+        return data.get("MarcarCambioPagadoResult", {}).get("StatusOK", False)
+    except Exception as e:
+        print(f"[marcarcambiopagado] Error: {e}")
+        return False
+
+
+def get_reservas(jugador_id):
+    """Devuelve las reservas abiertas del jugador."""
+    try:
+        url = f"{BASE_URL}/Jugadores/json/reservasall/{CENTRO},{jugador_id},{PROCEDENCIA}"
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        data = r.json()
+        reservas = data.get("ReservasAllResult", []) or []
+        resultado = []
+        for res in reservas:
+            hora_raw = res.get("fecha_hora_uso", "")
+            hora_str = unix_date_to_hhmm(hora_raw) if hora_raw else ""
+            # Extraer fecha
+            import re
+            m = re.search(r"/Date\((\d+)", hora_raw)
+            fecha_str_val = ""
+            if m:
+                import datetime as dt
+                ts = int(m.group(1)) // 1000
+                d = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
+                fecha_str_val = d.strftime("%Y-%m-%d")
+            # Buscar instalación
+            cod_inst = None
+            desc_inst = ""
+            for j in (res.get("jugadores") or []):
+                pass  # jugadores no tienen instalación directamente
+            resultado.append({
+                "id": res.get("codigo"),
+                "fecha": fecha_str_val,
+                "hora": hora_str,
+                "cod_instalacion": res.get("cod_instalacion") or res.get("instalacion"),
+                "descripcion": res.get("descripcion") or "",
+                "jugadores": [j.get("codigo") for j in (res.get("jugadores") or [])],
+            })
+        return resultado
+    except Exception as e:
+        print(f"[reservasall] Error: {e}")
+        return []
+
+
 def pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_data):
     """
     Confirma y paga la reserva (PUT /Reservas/json/PagarReserva).
@@ -492,13 +634,40 @@ def parsear_huecos(instalaciones_data, desde, hasta):
     return huecos
 
 
-def filtrar_por_instalacion(huecos, tipo):
-    """Filtra huecos para que coincidan con el tipo de campo solicitado."""
-    filtrados = [h for h in huecos if h["cod_instalacion"] == tipo]
+def filtrar_por_instalacion(huecos, tipo, preferencia=None):
+    """
+    Filtra y prioriza huecos según tipo y preferencia.
+    tipo puede ser un int (instalación única) o string "11,13" (búsqueda dual).
+    Si es dual: busca en ambas instalaciones y devuelve lista ordenada por hora
+    priorizando el campo preferido cuando hay coincidencia de hora.
+    """
+    # Modo dual: tipo es string "11,13"
+    if isinstance(tipo, str) and "," in tipo:
+        tipos = [int(t) for t in tipo.split(",")]
+        preferido = preferencia if preferencia in tipos else tipos[0]
+        no_preferido = [t for t in tipos if t != preferido][0]
+
+        huecos_pref = [h for h in huecos if h["cod_instalacion"] == preferido]
+        huecos_nopref = [h for h in huecos if h["cod_instalacion"] == no_preferido]
+
+        print(f"[filtrar] Dual: preferido={preferido}({len(huecos_pref)} huecos) alternativo={no_preferido}({len(huecos_nopref)} huecos)")
+
+        # Prioridad absoluta: si hay huecos en el campo preferido, usar solo esos.
+        # Solo caer al alternativo si el preferido no tiene nada en toda la franja.
+        if huecos_pref:
+            return huecos_pref
+        if huecos_nopref:
+            print(f"[filtrar] Sin huecos en preferido, usando alternativo {no_preferido}")
+            return huecos_nopref
+        return []
+
+    # Modo simple: tipo es int
+    tipo_int = int(tipo) if isinstance(tipo, str) else tipo
+    filtrados = [h for h in huecos if h["cod_instalacion"] == tipo_int]
     if filtrados:
-        print(f"[filtrar] {len(filtrados)} huecos para instalación {tipo}")
+        print(f"[filtrar] {len(filtrados)} huecos para instalación {tipo_int}")
         return filtrados
-    print(f"[filtrar] Sin huecos para instalación {tipo}")
+    print(f"[filtrar] Sin huecos para instalación {tipo_int}")
     return []
 
 
@@ -542,10 +711,11 @@ def sniper_loop(fecha, params):
     usuario = params["usuario"]
     clave = params["clave"]
     jugador_id = params["jugadorId"]
-    tipo = params["tipo"]
+    tipo = params["tipo"]  # puede ser int o string "11,13"
     desde = params["desde"]
     hasta = params["hasta"]
     jugadores = params["jugadores"]
+    preferencia = params.get("preferencia")  # instalación preferida en modo dual
 
     with snipers_lock:
         stop_event = snipers[fecha]["stop_event"]
@@ -570,7 +740,7 @@ def sniper_loop(fecha, params):
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
-        huecos = filtrar_por_instalacion(huecos, tipo)
+        huecos = filtrar_por_instalacion(huecos, tipo, preferencia)
         print(f"[Sniper:{fecha}] Huecos tipo {tipo}: {[h['hora'] for h in huecos]}")
 
         if not huecos:
@@ -626,6 +796,129 @@ def sniper_loop(fecha, params):
             snipers[fecha]["status"] = "idle"
             snipers[fecha]["mensaje"] = "Búsqueda detenida"
     print(f"[Sniper:{fecha}] Finalizado")
+
+
+def mejora_loop(key, params):
+    """
+    Sniper de mejora: busca un hueco mejor para una reserva existente.
+    Si lo encuentra: mueve la reserva, crea ticket y paga.
+    """
+    def set_state(**kwargs):
+        with snipers_lock:
+            if key in snipers:
+                snipers[key].update(kwargs)
+
+    usuario = params["usuario"]
+    clave = params["clave"]
+    jugador_id = params["jugadorId"]
+    reserva_id = params["reservaId"]
+    fecha = params["fecha"]
+    hora_actual = params["hora_actual"]          # hora a mejorar (ej: "10:10")
+    cod_inst_actual = params["cod_instalacion_actual"]
+    tipo = params["tipo"]                        # instalación objetivo (puede ser "11,13")
+    desde = params["desde"]
+    hasta = params["hasta"]
+    jugadores = params["jugadores"]
+    preferencia = params.get("preferencia")
+
+    with snipers_lock:
+        stop_event = snipers[key]["stop_event"]
+        poll_interval = snipers[key]["poll_interval"]
+
+    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3"}
+    print(f"[Mejora:{reserva_id}] Iniciando. Actual:{hora_actual} Buscando:{desde}-{hasta} tipo:{tipo}")
+
+    while not stop_event.is_set():
+        with snipers_lock:
+            poll_interval = snipers[key]["poll_interval"]
+            snipers[key]["attempts"] += 1
+            intento = snipers[key]["attempts"]
+
+        print(f"[Mejora:{reserva_id}] Intento #{intento}")
+        set_state(mensaje=f"Buscando mejora sobre {hora_actual}… (cada {poll_interval}s)")
+
+        instalaciones = get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo)
+        if instalaciones is None:
+            stop_event.wait(poll_interval)
+            continue
+
+        huecos = parsear_huecos(instalaciones, desde, hasta)
+        huecos = filtrar_por_instalacion(huecos, tipo, preferencia)
+
+        # Solo considerar huecos MEJORES que el actual (hora más temprana)
+        huecos_mejores = [h for h in huecos if h["hora"] < hora_actual]
+        print(f"[Mejora:{reserva_id}] Huecos mejores que {hora_actual}: {[h['hora'] for h in huecos_mejores]}")
+
+        if not huecos_mejores:
+            set_state(mensaje=f"Sin mejora disponible. Reintentando en {poll_interval}s…")
+            stop_event.wait(poll_interval)
+            continue
+
+        # ¡Hay mejora! Tomar el más temprano
+        hueco = huecos_mejores[0]
+        hora_nueva = hueco["hora"]
+        cod_inst_nueva = hueco["cod_instalacion"]
+        set_state(status="found", mensaje=f"¡Mejora a las {hora_nueva}! Moviendo reserva…")
+        print(f"[Mejora:{reserva_id}] Mejora encontrada: {hora_nueva} ({cod_inst_nueva}). Moviendo...")
+
+        # Verificar que sigue siendo modificable
+        if not es_modificable(reserva_id):
+            set_state(status="error", error="La reserva ya no es modificable")
+            break
+
+        # Mover reserva
+        res_mover = mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores)
+        if not res_mover["ok"]:
+            set_state(status="searching", mensaje=f"Error moviendo: {res_mover['error']}. Reintentando…")
+            stop_event.wait(5)
+            continue
+
+        # Ticket del nuevo horario
+        ticket_res = crear_ticket(reserva_id, jugador_id)
+        if not ticket_res["ok"]:
+            set_state(status="searching")
+            stop_event.wait(5)
+            continue
+
+        # Pagar el cambio
+        pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores, ticket_res["ticket"])
+        if not pago_res["ok"]:
+            set_state(status="searching")
+            stop_event.wait(5)
+            continue
+
+        # Marcar cambio como pagado
+        marcar_cambio_pagado(reserva_id)
+
+        # ¡ÉXITO!
+        fecha_fmt = datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
+        set_state(
+            status="reserved",
+            mensaje=f"¡Reserva mejorada! {hora_actual} → {hora_nueva}",
+            reserva={
+                "id": reserva_id,
+                "fecha": fecha_fmt,
+                "hora": hora_nueva,
+                "hora_anterior": hora_actual,
+                "tipo": cod_inst_nueva,
+                "jugadores": jugadores,
+            }
+        )
+        print(f"[Mejora:{reserva_id}] ✅ MEJORADA: {hora_actual} → {hora_nueva} {tipo_nombre.get(cod_inst_nueva, cod_inst_nueva)}")
+        send_telegram(
+            f"🔄 <b>¡Reserva mejorada!</b>\n\n"
+            f"📅 <b>Fecha:</b> {fecha_fmt}\n"
+            f"🕐 <b>Antes:</b> {hora_actual} → <b>Ahora:</b> {hora_nueva}\n"
+            f"🏌️ <b>Campo:</b> {tipo_nombre.get(cod_inst_nueva, str(cod_inst_nueva))}\n"
+            f"🔖 <b>Ref:</b> #{reserva_id}"
+        )
+        break
+
+    with snipers_lock:
+        if key in snipers and snipers[key]["status"] == "searching":
+            snipers[key]["status"] = "idle"
+            snipers[key]["mensaje"] = "Búsqueda de mejora detenida"
+    print(f"[Mejora:{reserva_id}] Finalizado")
 
 
 # ══════════════════════════════════════════════════════
