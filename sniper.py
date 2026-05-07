@@ -551,41 +551,85 @@ def marcar_cambio_pagado(reserva_id):
 
 
 def get_reservas(jugador_id):
-    """Devuelve las reservas abiertas del jugador."""
+    """
+    Devuelve las reservas futuras activas del jugador consultando la API del club en tiempo real.
+    Siempre fresco — si el socio cancela desde la app del club, desaparece aquí también.
+    """
+    import re, datetime as dt
     try:
         url = f"{BASE_URL}/Jugadores/json/reservasall/{CENTRO},{jugador_id},{PROCEDENCIA}"
+        print(f"[reservasall] GET {url}")
         r = requests.get(url, headers=HEADERS, timeout=10)
+        print(f"[reservasall] HTTP {r.status_code}")
+        print(f"[reservasall] Raw: {r.text[:800]}")
         data = r.json()
-        reservas = data.get("ReservasAllResult", []) or []
+        print(f"[reservasall] Keys: {list(data.keys())}")
+
+        # La clave puede variar — buscarla
+        reservas_raw = data.get("ReservasAllResult") or data.get("Reservas") or []
+        if isinstance(reservas_raw, dict):
+            # A veces viene envuelto
+            for v in reservas_raw.values():
+                if isinstance(v, list):
+                    reservas_raw = v
+                    break
+
+        print(f"[reservasall] {len(reservas_raw)} reservas encontradas")
+        if reservas_raw:
+            print(f"[reservasall] Ejemplo: {str(reservas_raw[0])[:300]}")
+
+        ahora = dt.datetime.now()
         resultado = []
-        for res in reservas:
-            hora_raw = res.get("fecha_hora_uso", "")
+
+        for res in reservas_raw:
+            if not isinstance(res, dict):
+                continue
+
+            # Fecha/hora — puede estar en distintos campos
+            hora_raw = (
+                res.get("fecha_hora_uso") or res.get("fecha_hora") or
+                res.get("FechaHora") or res.get("Fecha") or ""
+            )
             hora_str = unix_date_to_hhmm(hora_raw) if hora_raw else ""
+
             # Extraer fecha
-            import re
-            m = re.search(r"/Date\((\d+)", hora_raw)
             fecha_str_val = ""
+            m = re.search(r"/Date\((\d+)", hora_raw)
             if m:
-                import datetime as dt
                 ts = int(m.group(1)) // 1000
-                d = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
-                fecha_str_val = d.strftime("%Y-%m-%d")
-            # Buscar instalación
-            cod_inst = None
-            desc_inst = ""
-            for j in (res.get("jugadores") or []):
-                pass  # jugadores no tienen instalación directamente
+                fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
+                fecha_str_val = fecha_dt.strftime("%Y-%m-%d")
+                # Solo reservas futuras (a partir de hoy)
+                if fecha_dt.date() < ahora.date():
+                    continue
+
+            # Instalación
+            cod_inst = (
+                res.get("cod_instalacion") or res.get("instalacion") or
+                res.get("CodInstalacion") or res.get("Instalacion")
+            )
+            descripcion = res.get("descripcion") or res.get("Descripcion") or ""
+
+            # Jugadores
+            jugadores_raw = res.get("jugadores") or res.get("Jugadores") or []
+            jugadores_ids = [j.get("codigo") or j.get("Codigo") for j in jugadores_raw if isinstance(j, dict)]
+
             resultado.append({
-                "id": res.get("codigo"),
+                "id": res.get("codigo") or res.get("Codigo") or res.get("IDReserva"),
                 "fecha": fecha_str_val,
                 "hora": hora_str,
-                "cod_instalacion": res.get("cod_instalacion") or res.get("instalacion"),
-                "descripcion": res.get("descripcion") or "",
-                "jugadores": [j.get("codigo") for j in (res.get("jugadores") or [])],
+                "cod_instalacion": cod_inst,
+                "descripcion": descripcion,
+                "jugadores": jugadores_ids,
             })
+
+        # Ordenar por fecha+hora
+        resultado.sort(key=lambda x: (x["fecha"], x["hora"]))
+        print(f"[reservasall] {len(resultado)} reservas futuras")
         return resultado
     except Exception as e:
         print(f"[reservasall] Error: {e}")
+        import traceback; traceback.print_exc()
         return []
 
 
