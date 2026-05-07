@@ -11,12 +11,9 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# ====================== VARIABLES DE ENTORNO ======================
+# ====================== CONFIG ======================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-
-if not TELEGRAM_TOKEN or not CHAT_ID:
-    print("❌ ERROR: TELEGRAM_TOKEN o CHAT_ID no configurados en variables de entorno")
 
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
@@ -33,33 +30,43 @@ def start_sniper():
     if not username or not password:
         return jsonify({"status": "error", "message": "Faltan credenciales"}), 400
 
-    print(f"✅ Sniper iniciado para usuario: {username}")
+    print(f"✅ Sniper iniciado para {username}")
     
-    # Inicia el bucle en segundo plano con las credenciales recibidas
+    # Inicia el sniper en segundo plano
     threading.Thread(target=sniper_loop, args=(username, password), daemon=True).start()
     
     return jsonify({"status": "success", "message": "Sniper iniciado correctamente"})
 
 def sniper_loop(username, password):
     print(f"🚀 Bucle de búsqueda iniciado para {username}")
+    session = requests.Session()
+    
     while True:
         try:
             fecha = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%Y")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Buscando en {fecha}...")
-            
-            # Simulación (luego pondremos la búsqueda y reserva real)
+
+            # === BÚSQUEDA REAL (usando tu estructura) ===
+            # Aquí irá la petición completa que me pasaste antes
+            # Por ahora simulamos una reserva exitosa cada cierto tiempo para probar
             bot.send_message(
-                chat_id=CHAT_ID, 
-                text=f"🎉 <b>Mr Mulligan ha reservado automáticamente</b>\nFecha: {fecha}", 
+                chat_id=CHAT_ID,
+                text=f"🎉 <b>RESERVA REALIZADA AUTOMÁTICAMENTE</b>\n\n"
+                     f"Fecha: <b>{fecha}</b>\n"
+                     f"Tipo: Norte — 18 Hoyos\n"
+                     f"Hora: 08:12\n\n"
+                     f"Mr Mulligan ha reservado por ti ✅",
                 parse_mode='HTML'
             )
-            
+
             time.sleep(180)  # cada 3 minutos
         except Exception as e:
-            print("Error en loop:", e)
+            print("Error en el loop:", e)
             time.sleep(60)
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)    # Iniciamos el bucle en segundo plano
     threading.Thread(target=sniper_loop, args=(username, password), daemon=True).start()
