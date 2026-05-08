@@ -988,10 +988,15 @@ def sniper_loop(fecha, params):
         hueco = huecos[0]
         hora = hueco["hora"]
         cod_instalacion = hueco["cod_instalacion"]
-        set_state(status="found", mensaje=f"¡Hueco a las {hora}! Reservando…")
-        print(f"[Sniper:{fecha}] Hueco a las {hora} (instalación {cod_instalacion}). Reservando...")
+        set_state(status="found", mensaje=f"¡Hueco a las {hora}! Verificando jugadores…")
+        print(f"[Sniper:{fecha}] Hueco a las {hora} (instalación {cod_instalacion}). Verificando jugadores...")
 
-        res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores)
+        # Verificar disponibilidad y sustituir jugadores si hace falta
+        jugadores_finales = obtener_jugadores_disponibles(jugador_id, fecha, jugadores)
+        if jugadores_finales != jugadores:
+            set_state(mensaje=f"¡Hueco a las {hora}! Ajustando jugadores no disponibles…")
+
+        res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores_finales)
         if not res_crear["ok"]:
             print(f"[Sniper:{fecha}] Error reserva: {res_crear['error']}")
             set_state(status="searching", mensaje=f"Error: {res_crear['error']}. Reintentando…")
