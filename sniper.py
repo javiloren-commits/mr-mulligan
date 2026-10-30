@@ -19,7 +19,8 @@ CORS(app)
 # ══════════════════════════════════════════════════════
 #  CONFIGURACIÓN
 # ══════════════════════════════════════════════════════
-BASE_URL = "https://reservas.rshecc.es/AppWebServices.7.0.0"
+API_VERSION = os.environ.get("API_VERSION", "7.1.0")  # cambiar en Render si el club actualiza la app
+BASE_URL = f"https://reservas.rshecc.es/AppWebServices.{API_VERSION}"
 CENTRO = "24"
 PROCEDENCIA = "6"
 IDIOMA = "1"
