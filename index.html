@@ -1,0 +1,2005 @@
+<!DOCTYPE html>
+<!-- Mr. Mulligan v2.5 - reservas programadas 05:00 -->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mr. Mulligan">
+<meta name="theme-color" content="#006C5B">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+<title>Mr. Mulligan – RSHECC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #006C5B;
+    --green-dark: #004d40;
+    --green-light: #e8f5f0;
+    --gold: #b8973a;
+    --gold-light: #f5eed8;
+    --slate: #314a52;
+    --slate-light: #6b8a93;
+    --cream: #f8fafc;
+    --white: #ffffff;
+    --error: #c0392b;
+    --success: #006C5B;
+    --border: #dde8e5;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--cream);
+    color: var(--slate);
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* ── FONDO DECORATIVO ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,108,91,0.08) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 30% at 90% 90%, rgba(184,151,58,0.06) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ══════════════════════════════
+     PANTALLA LOGIN
+  ══════════════════════════════ */
+  #screen-login {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    z-index: 10;
+    background: var(--cream);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+
+  #screen-login.hidden {
+    opacity: 0;
+    transform: translateY(-30px);
+    pointer-events: none;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2.5rem 2rem;
+    box-shadow: 0 8px 40px rgba(0,108,91,0.08), 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  .logo-area {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .logo-icon {
+    width: 60px;
+    height: 60px;
+    background: var(--green);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    font-size: 1.6rem;
+  }
+
+  .logo-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--green-dark);
+    letter-spacing: 0.02em;
+  }
+
+  .logo-subtitle {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--slate-light);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 0.25rem;
+  }
+
+  .divider-gold {
+    width: 40px;
+    height: 2px;
+    background: var(--gold);
+    margin: 1rem auto;
+    border-radius: 2px;
+  }
+
+  .form-group {
+    margin-bottom: 0.6rem;
+  }
+
+  label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--slate-light);
+    margin-bottom: 0.4rem;
+  }
+
+  input[type="text"], input[type="password"], input[type="date"], input[type="time"], select {
+    width: 100%;
+    padding: 0.6rem 0.85rem;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.92rem;
+    color: var(--slate);
+    background: var(--white);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(0,108,91,0.12);
+  }
+
+  .btn-primary {
+    width: 100%;
+    padding: 0.85rem;
+    background: var(--green);
+    color: var(--white);
+    border: none;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    margin-top: 0.5rem;
+    box-shadow: 0 4px 16px rgba(0,108,91,0.25);
+  }
+
+  .btn-primary:hover { background: var(--green-dark); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,108,91,0.3); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { background: var(--slate-light); box-shadow: none; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    width: 100%;
+    padding: 0.8rem;
+    background: transparent;
+    color: var(--slate);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary:hover { border-color: var(--slate); background: rgba(49,74,82,0.04); }
+
+  .error-msg {
+    background: #fdf0ef;
+    border: 1px solid #f5c6c2;
+    color: var(--error);
+    border-radius: 8px;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.82rem;
+    margin-top: 0.75rem;
+    display: none;
+  }
+
+  .error-msg.visible { display: block; }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ══════════════════════════════
+     PANTALLA PRINCIPAL
+  ══════════════════════════════ */
+  #screen-main {
+    display: none;
+    flex-direction: column;
+    min-height: 100dvh;
+    position: relative;
+    z-index: 5;
+  }
+
+  #screen-main.visible { display: flex; }
+
+  .top-bar {
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 0.6rem 1.25rem 0.6rem;
+    padding-top: max(0.6rem, env(safe-area-inset-top));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+  }
+
+  .top-bar-brand {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--green-dark);
+  }
+
+  .top-bar-user {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--slate-light);
+  }
+
+  .top-bar-user button {
+    background: none;
+    border: none;
+    color: var(--slate-light);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0.25rem;
+    transition: color 0.2s;
+  }
+
+  .top-bar-user button:hover { color: var(--error); }
+
+  .main-content {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    max-width: 480px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .section-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--slate);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 0.85rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+  }
+
+  /* Grid de parámetros */
+  .params-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+
+  .params-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  /* Select personalizado */
+  .select-wrapper {
+    position: relative;
+  }
+
+  .select-wrapper::after {
+    content: '▾';
+    position: absolute;
+    right: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--slate-light);
+    pointer-events: none;
+    font-size: 0.8rem;
+  }
+
+  /* Jugadores */
+  .player-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .player-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    background: var(--green-light);
+    border-radius: 10px;
+    font-size: 0.85rem;
+  }
+
+  .player-item.owner {
+    background: var(--gold-light);
+    border: 1px solid rgba(184,151,58,0.2);
+  }
+
+  .player-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--green);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .player-item.owner .player-avatar {
+    background: var(--gold);
+  }
+
+  .player-name {
+    flex: 1;
+    font-weight: 500;
+    color: var(--slate);
+  }
+
+  .player-remove {
+    background: none;
+    border: none;
+    color: var(--slate-light);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.2rem;
+    line-height: 1;
+    transition: color 0.2s;
+    border-radius: 50%;
+  }
+
+  .player-remove:hover { color: var(--error); }
+
+  .btn-hora {
+    flex: 1;
+    padding: 0.5rem 0.25rem;
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--slate-light);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-hora:hover { border-color: var(--green); color: var(--green); }
+  .btn-hora.active { background: var(--green); color: white; border-color: var(--green); }
+  .btn-hora.active-alt { background: var(--green-light); color: var(--green); border-color: var(--green); }
+
+  .btn-add-player {
+    width: 100%;
+    padding: 0.6rem;
+    background: transparent;
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    color: var(--slate-light);
+    font-size: 0.82rem;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+
+  .btn-add-player:hover:not(:disabled) {
+    border-color: var(--green);
+    color: var(--green);
+    background: var(--green-light);
+  }
+
+  .btn-add-player:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Modal añadir jugador */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    display: flex;
+    align-items: flex-end;
+    padding: 1rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+    backdrop-filter: blur(2px);
+  }
+
+  .modal-overlay.visible { opacity: 1; pointer-events: all; }
+
+  .modal-sheet {
+    background: var(--white);
+    border-radius: 20px;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    transform: translateY(20px);
+    transition: transform 0.3s ease;
+  }
+
+  .modal-overlay.visible .modal-sheet { transform: translateY(0); }
+
+  .modal-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--slate);
+  }
+
+  .contact-list {
+    max-height: 280px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .contact-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1.5px solid transparent;
+  }
+
+  .contact-item:hover { background: var(--green-light); }
+  .contact-item.selected { background: var(--green-light); border-color: var(--green); }
+
+  .contact-name { font-size: 0.88rem; font-weight: 500; color: var(--slate); flex: 1; }
+  .contact-hcp { font-size: 0.76rem; color: var(--slate-light); }
+
+  .loading-contacts {
+    text-align: center;
+    padding: 2rem;
+    color: var(--slate-light);
+    font-size: 0.85rem;
+  }
+
+  /* ── PANEL DE ESTADO / SNIPER ── */
+  #status-panel {
+    display: none;
+  }
+
+  #status-panel.visible {
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .status-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .status-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--green), var(--gold), var(--green));
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  .status-card.success::before {
+    background: var(--green);
+    animation: none;
+  }
+
+  .status-card.error::before {
+    background: var(--error);
+    animation: none;
+  }
+
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  .status-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    display: block;
+  }
+
+  .status-label {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--slate);
+    margin-bottom: 0.4rem;
+  }
+
+  .status-detail {
+    font-size: 0.82rem;
+    color: var(--slate-light);
+    line-height: 1.5;
+  }
+
+  .pulse-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 1.4s ease-in-out infinite;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.5; }
+  }
+
+  .attempt-counter {
+    font-size: 0.76rem;
+    color: var(--slate-light);
+    margin-top: 0.5rem;
+  }
+
+  /* ── PANEL DE ÉXITO ── */
+  .success-card {
+    background: var(--white);
+    border: 1px solid rgba(0,108,91,0.2);
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .success-badge {
+    width: 70px;
+    height: 70px;
+    background: var(--green);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    margin: 0 auto 1rem;
+    box-shadow: 0 8px 24px rgba(0,108,91,0.25);
+    animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  @keyframes popIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .success-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--green-dark);
+    margin-bottom: 0.25rem;
+  }
+
+  .success-subtitle {
+    font-size: 0.82rem;
+    color: var(--slate-light);
+    margin-bottom: 1.25rem;
+  }
+
+  .booking-details {
+    background: var(--green-light);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    text-align: left;
+  }
+
+  .booking-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.35rem 0;
+    font-size: 0.85rem;
+  }
+
+  .booking-row + .booking-row {
+    border-top: 1px solid rgba(0,108,91,0.1);
+  }
+
+  .booking-key {
+    color: var(--slate-light);
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .booking-val {
+    font-weight: 500;
+    color: var(--slate);
+  }
+
+  .telegram-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: #e8f4fd;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    color: #0088cc;
+    font-weight: 500;
+    margin-bottom: 1rem;
+  }
+
+  /* ── BOTONES ACCIÓN ── */
+  .action-area {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+  }
+
+  .btn-sniper {
+    width: 100%;
+    padding: 0.85rem;
+    background: var(--green);
+    color: var(--white);
+    border: none;
+    border-radius: 14px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 20px rgba(0,108,91,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+  }
+
+  .btn-sniper:hover { background: var(--green-dark); transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,108,91,0.35); }
+  .btn-sniper:active { transform: translateY(0); }
+  .btn-sniper:disabled { background: var(--slate-light); box-shadow: none; cursor: not-allowed; transform: none; }
+
+  /* ── FOOTER ── */
+  /* ── MIS RESERVAS ── */
+  .reserva-item {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .reserva-info { flex: 1; }
+  .reserva-fecha { font-size: 0.72rem; color: var(--slate-light); text-transform: uppercase; letter-spacing: 0.07em; }
+  .reserva-hora { font-family: 'Cormorant Garamond', serif; font-size: 1.3rem; font-weight: 600; color: var(--slate); line-height: 1; }
+  .reserva-campo { font-size: 0.78rem; color: var(--slate-light); margin-top: 0.15rem; }
+
+  .btn-mejorar {
+    padding: 0.5rem 0.85rem;
+    background: var(--gold-light);
+    color: var(--gold);
+    border: 1.5px solid rgba(184,151,58,0.3);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-mejorar:hover { background: var(--gold); color: white; }
+
+  /* Modal de mejora */
+  .modal-title-small { font-size: 1rem; font-weight: 600; color: var(--slate); margin-bottom: 0.75rem; }
+
+  .footer {
+    text-align: center;
+    padding: 1.5rem;
+    font-size: 0.72rem;
+    color: var(--slate-light);
+    letter-spacing: 0.05em;
+  }
+
+  .footer span { color: var(--gold); }
+
+  /* ── ANIMACIÓN ENTRADA ── */
+  .fade-in {
+    animation: fadeIn 0.4s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── NOTIFICACIÓN TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--slate);
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border-radius: 100px;
+    font-size: 0.82rem;
+    z-index: 999;
+    transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    white-space: nowrap;
+    max-width: 90vw;
+    text-align: center;
+  }
+
+  .toast.visible { transform: translateX(-50%) translateY(0); }
+  .toast.success-toast { background: var(--green); }
+  .toast.error-toast { background: var(--error); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════
+     PANTALLA LOGIN
+══════════════════════════════ -->
+<div id="screen-login">
+  <div class="login-card">
+    <div class="logo-area">
+      <div class="logo-icon">🦊</div>
+      <div class="logo-title">Mr. Mulligan</div>
+      <div class="logo-subtitle">RSHECC · Golf Auto-Booking</div>
+      <div class="divider-gold"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Número de socio</label>
+      <input type="text" id="login-user" placeholder="p.ej. 0000006950" inputmode="numeric" autocomplete="username">
+    </div>
+
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+
+    <div class="error-msg" id="login-error">Credenciales incorrectas. Por favor, revisa tu número de socio y contraseña.</div>
+
+    <button class="btn-primary" id="btn-login" onclick="doLogin()">
+      Entrar
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════
+     PANTALLA PRINCIPAL
+══════════════════════════════ -->
+<div id="screen-main">
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="top-bar-brand">Mr. Mulligan</div>
+    <div class="top-bar-user">
+      <span id="top-user-name">—</span>
+      <button onclick="doLogout()" title="Cerrar sesión">⏏</button>
+    </div>
+  </div>
+
+  <div class="main-content">
+
+    <!-- ── Panel éxito (oculto por defecto) ── -->
+    <div id="success-panel" style="display:none;" class="fade-in">
+      <div class="success-card">
+        <div class="success-badge">✓</div>
+        <div class="success-title">¡Reserva confirmada!</div>
+        <div class="success-subtitle">Tu salida ha sido reservada con éxito</div>
+
+        <div class="booking-details" id="booking-details">
+          <!-- Se rellena dinámicamente -->
+        </div>
+
+        <div class="telegram-badge">
+          <span>✈</span>
+          <span>Notificación enviada por Telegram</span>
+        </div>
+
+        <div class="action-area">
+          <button class="btn-primary" onclick="resetToForm()">Nueva búsqueda</button>
+          <button class="btn-secondary" id="btn-anular" onclick="anularReserva()" style="color:#c0392b; border-color:#f5c6c2;">
+            Anular reserva
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Mis reservas ── -->
+    <div id="reservas-panel" style="display:none;">
+      <p class="section-title">Mis reservas</p>
+      <div id="reservas-list" style="display:flex;flex-direction:column;gap:0.65rem;margin-bottom:1rem;"></div>
+    </div>
+
+    <!-- ── Panel de snipers activos ── -->
+    <div id="status-panel">
+      <p class="section-title">Búsquedas activas</p>
+      <div id="snipers-list" style="display:flex;flex-direction:column;gap:0.75rem;"></div>
+    </div>
+
+    <!-- ── Formulario principal ── -->
+    <div id="form-panel">
+
+      <p class="section-title">Fecha y tipo de salida</p>
+      <div class="card">
+        <div class="params-grid">
+          <div class="form-group full">
+            <label>Fecha</label>
+            <input type="date" id="param-fecha" />
+            <div id="fechas-hint" style="font-size:0.7rem;color:var(--slate-light);margin-top:0.25rem;display:none;">
+              Disponibles: <span id="fechas-disponibles-list" style="color:var(--green);font-weight:500;"></span>
+            </div>
+            <div id="fecha-estado" style="font-size:0.72rem;margin-top:0.2rem;font-weight:500;"></div>
+          </div>
+
+          <div class="form-group full">
+            <label>Tipo de salida</label>
+            <div class="select-wrapper">
+              <select id="param-tipo" onchange="togglePreferencia()">
+                <option value="11">Norte 18 hoyos</option>
+                <option value="13">Sur 18 hoyos</option>
+                <option value="11,13">Norte o Sur 18 hoyos</option>
+                <option value="12">Norte 9 hoyos</option>
+                <option value="14">Sur 9 hoyos</option>
+                <option value="15">Pares 3</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Desde</label>
+            <input type="time" id="param-desde" value="08:00">
+          </div>
+
+          <div class="form-group">
+            <label>Hasta</label>
+            <input type="time" id="param-hasta" value="10:20">
+          </div>
+
+          <div class="form-group full" id="preferencia-group" style="display:none;">
+            <label>Campo preferido</label>
+            <div class="select-wrapper">
+              <select id="param-preferencia">
+                <option value="11">Preferir Norte</option>
+                <option value="13">Preferir Sur</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group full">
+            <label>Preferencia de horario</label>
+            <div style="display:flex;gap:0.5rem;">
+              <button type="button" class="btn-hora" id="hora-pronto" onclick="toggleHora('pronto')" title="Primer tercio de la franja">Pronto</button>
+              <button type="button" class="btn-hora" id="hora-mitad" onclick="toggleHora('mitad')" title="Tercio central">Mitad</button>
+              <button type="button" class="btn-hora" id="hora-tarde" onclick="toggleHora('tarde')" title="Último tercio">Tarde</button>
+            </div>
+            <div style="font-size:0.68rem;color:var(--slate-light);margin-top:0.25rem;" id="hora-hint">Sin preferencia — se escoge el más temprano</div>
+          </div>
+
+          <div class="form-group full">
+            <label>Intervalo de búsqueda</label>
+            <div class="select-wrapper">
+              <select id="param-intervalo">
+                <option value="30">Cada 30 segundos</option>
+                <option value="60">Cada 1 minuto</option>
+                <option value="120">Cada 2 minutos</option>
+                <option value="300">Cada 5 minutos</option>
+                <option value="600">Cada 10 minutos</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="section-title">Jugadores</p>
+      <div class="card">
+        <div class="player-list" id="player-list">
+          <!-- Se rellena con el socio logueado automáticamente -->
+        </div>
+        <button class="btn-add-player" id="btn-add-player" onclick="abrirModalJugadores()">
+          + Añadir jugador
+        </button>
+        <div style="font-size:0.72rem; color:var(--slate-light); margin-top:0.5rem; text-align:center;">
+          Máximo 4 jugadores
+        </div>
+      </div>
+
+      <!-- Botones acción -->
+      <div class="action-area">
+        <button class="btn-sniper" id="btn-start" onclick="iniciarBusqueda()">
+          <span style="pointer-events:none;">⛳</span><span style="pointer-events:none;"> Añadir búsqueda automática</span>
+        </button>
+      </div>
+
+      <!-- ── Búsquedas completadas ── -->
+      <div id="completadas-panel" style="display:none;margin-top:1rem;">
+        <p class="section-title">Completadas</p>
+        <div id="completadas-list" style="display:flex;flex-direction:column;gap:0.6rem;"></div>
+      </div>
+
+    </div><!-- /form-panel -->
+
+  </div><!-- /main-content -->
+
+  <div class="footer">
+    Mr. Mulligan · RSHECC · <span>Hecho con ♥</span>
+  </div>
+
+<!-- ── MODAL CONFIGURAR MEJORA ── -->
+<div class="modal-overlay" id="modal-mejora" onclick="cerrarModalMejora(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">Buscar mejora</div>
+    <div id="mejora-reserva-info" style="background:var(--green-light);border-radius:10px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;color:var(--slate);"></div>
+
+    <div class="params-grid">
+      <div class="form-group full">
+        <label>Campo objetivo</label>
+        <div class="select-wrapper">
+          <select id="mejora-tipo" onchange="toggleMejoraPreferencia()">
+            <option value="11">Norte 18 hoyos</option>
+            <option value="13">Sur 18 hoyos</option>
+            <option value="11,13">Norte o Sur 18h</option>
+            <option value="12">Norte 9 hoyos</option>
+            <option value="14">Sur 9 hoyos</option>
+            <option value="15">Pares 3</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="mejora-pref-group" style="display:none;grid-column:1/-1;">
+        <label>Campo preferido</label>
+        <div class="select-wrapper">
+          <select id="mejora-preferencia">
+            <option value="11">Preferir Norte</option>
+            <option value="13">Preferir Sur</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Desde</label>
+        <input type="time" id="mejora-desde" value="08:00">
+      </div>
+      <div class="form-group">
+        <label>Hasta</label>
+        <input type="time" id="mejora-hasta" value="10:00">
+      </div>
+      <div class="form-group full">
+        <label>Preferencia de horario</label>
+        <div style="display:flex;gap:0.5rem;">
+          <button type="button" class="btn-hora" id="mejora-hora-pronto" onclick="toggleHoraMejora('pronto')">Pronto</button>
+          <button type="button" class="btn-hora" id="mejora-hora-mitad" onclick="toggleHoraMejora('mitad')">Mitad</button>
+          <button type="button" class="btn-hora" id="mejora-hora-tarde" onclick="toggleHoraMejora('tarde')">Tarde</button>
+        </div>
+        <div style="font-size:0.68rem;color:var(--slate-light);margin-top:0.25rem;" id="mejora-hora-hint">Sin preferencia</div>
+      </div>
+
+      <div class="form-group full">
+        <label>Intervalo</label>
+        <div class="select-wrapper">
+          <select id="mejora-intervalo">
+            <option value="60">Cada 1 minuto</option>
+            <option value="120">Cada 2 minutos</option>
+            <option value="300">Cada 5 minutos</option>
+            <option value="30">Cada 30 segundos</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-area">
+      <button class="btn-primary" onclick="iniciarMejora()">Iniciar búsqueda de mejora</button>
+      <button class="btn-secondary" onclick="cerrarModal2()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /screen-main -->
+
+<!-- ══════════════════════════════
+     MODAL AÑADIR JUGADOR
+══════════════════════════════ -->
+<div class="modal-overlay" id="modal-jugadores" onclick="cerrarModalJugadores(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">Añadir jugador</div>
+    <div class="contact-list" id="contact-list">
+      <div class="loading-contacts">
+        <span class="loading-spinner" style="border-color:rgba(0,108,91,0.3); border-top-color:var(--green);"></span>
+        Cargando contactos…
+      </div>
+    </div>
+    <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  CONFIGURACIÓN
+// ══════════════════════════════════════════════════════
+const BACKEND_URL = 'https://mr-mulligan.onrender.com'; // Cambiar por tu URL de Render
+
+// Estado global
+let state = {
+  session: null,
+  players: [],
+  contacts: [],
+};
+
+// Snipers activos: { fecha: { pollTimer, params } }
+let activeSnipers = {};
+
+// ══════════════════════════════════════════════════════
+//  INICIALIZACIÓN
+// ══════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  // Fecha por defecto: mañana
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  document.getElementById('param-fecha').value = tomorrow.toISOString().split('T')[0];
+  document.getElementById('param-fecha').min = tomorrow.toISOString().split('T')[0];
+
+  // Recuperar sesión guardada
+  const saved = sessionStorage.getItem('mm_session');
+  if (saved) {
+    state.session = JSON.parse(saved);
+    mostrarPantallaPrincipal();
+  }
+
+  // Enter en login
+  document.getElementById('login-pass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('login-user').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-pass').focus();
+  });
+});
+
+// ══════════════════════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════════════════════
+async function doLogin() {
+  const usuario = document.getElementById('login-user').value.trim();
+  const clave = document.getElementById('login-pass').value.trim();
+  const btn = document.getElementById('btn-login');
+  const errEl = document.getElementById('login-error');
+
+  if (!usuario || !clave) {
+    errEl.textContent = 'Por favor, introduce tu número de socio y contraseña.';
+    errEl.classList.add('visible');
+    return;
+  }
+
+  errEl.classList.remove('visible');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span>Entrando…';
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, clave })
+    });
+
+    const data = await res.json();
+
+    if (data.ok) {
+      state.session = {
+        usuario,
+        clave,
+        jugadorId: data.jugadorId,
+        nombre: data.nombre,
+      };
+      sessionStorage.setItem('mm_session', JSON.stringify(state.session));
+      mostrarPantallaPrincipal();
+    } else {
+      errEl.textContent = data.error || 'Credenciales incorrectas.';
+      errEl.classList.add('visible');
+    }
+  } catch (e) {
+    errEl.textContent = 'No se puede conectar con el servidor. Revisa tu conexión.';
+    errEl.classList.add('visible');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Entrar';
+}
+
+function doLogout() {
+  sessionStorage.removeItem('mm_session');
+  // Detener todos los snipers
+  Object.keys(activeSnipers).forEach(f => clearInterval(activeSnipers[f].pollTimer));
+  activeSnipers = {};
+  state = { session: null, players: [], contacts: [] };
+  document.getElementById('screen-main').classList.remove('visible');
+  document.getElementById('screen-main').style.display = 'none';
+  document.getElementById('screen-login').classList.remove('hidden');
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+}
+
+// ══════════════════════════════════════════════════════
+//  PANTALLA PRINCIPAL
+// ══════════════════════════════════════════════════════
+function mostrarPantallaPrincipal() {
+  document.getElementById('screen-login').classList.add('hidden');
+  const mainEl = document.getElementById('screen-main');
+  mainEl.style.display = 'flex';
+  mainEl.classList.add('visible');
+
+  // Nombre en top bar
+  document.getElementById('top-user-name').textContent = state.session.nombre || state.session.usuario;
+
+  // Añadir socio como primer jugador
+  state.players = [{
+    id: state.session.jugadorId,
+    nombre: state.session.nombre || 'Tú',
+    esOwner: true
+  }];
+  renderPlayers();
+
+  // Cargar contactos y reservas en background
+  cargarContactos();
+  cargarReservas();
+  cargarFechasDisponibles();
+
+  // Restaurar snipers activos del servidor
+  restaurarSnipers();
+
+  // Refrescar reservas cada 60s (detecta cancelaciones externas)
+  setInterval(cargarReservas, 60000);
+}
+
+function renderPlayers() {
+  const list = document.getElementById('player-list');
+  list.innerHTML = state.players.map((p, i) => `
+    <div class="player-item ${p.esOwner ? 'owner' : ''}">
+      <div class="player-avatar">${initials(p.nombre)}</div>
+      <div class="player-name">${p.nombre}${p.esOwner ? ' <span style="font-size:0.7rem;color:var(--gold);font-weight:400;">(tú)</span>' : ''}</div>
+      ${!p.esOwner ? `<button class="player-remove" onclick="removePlayer(${i})" title="Eliminar">✕</button>` : ''}
+    </div>
+  `).join('');
+
+  // Deshabilitar botón si ya hay 4
+  document.getElementById('btn-add-player').disabled = state.players.length >= 4;
+}
+
+function initials(nombre) {
+  return nombre.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+}
+
+function removePlayer(i) {
+  state.players.splice(i, 1);
+  renderPlayers();
+}
+
+// ══════════════════════════════════════════════════════
+//  CONTACTOS
+// ══════════════════════════════════════════════════════
+function actualizarEstadoFecha() {
+  var el = document.getElementById('fecha-estado');
+  var input = document.getElementById('param-fecha');
+  if (!el || !input.value) return;
+  var abiertas = state.fechasDisponibles || [];
+  if (abiertas.indexOf(input.value) >= 0) {
+    el.style.color = 'var(--green)';
+    el.textContent = 'Abierto: buscará hora en cuanto lances la búsqueda';
+    return;
+  }
+  var p = input.value.split('-');
+  var d = new Date(+p[0], +p[1] - 1, +p[2]);
+  var dow = d.getDay(); // 0=dom, 6=sáb
+  el.style.color = 'var(--gold)';
+  if (dow === 6 || dow === 0) {
+    var jueves = new Date(d); jueves.setDate(d.getDate() - (dow === 6 ? 2 : 3));
+    var dd = String(jueves.getDate()).padStart(2, '0') + '/' + String(jueves.getMonth() + 1).padStart(2, '0');
+    el.textContent = 'Aún no abierto: se programa y empezará a comprobar el jue ' + dd + ' a las 05:00';
+  } else {
+    el.textContent = 'Aún no abierto: se programa y comprobará hasta que abra';
+  }
+}
+
+async function cargarFechasDisponibles() {
+  try {
+    const res = await fetch(BACKEND_URL + '/fechas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario: state.session.usuario,
+        clave: state.session.clave,
+        jugadorId: state.session.jugadorId
+      })
+    });
+    const data = await res.json();
+    if (!data.ok || !data.fechas || !data.fechas.length) return;
+
+    const sorted = [...data.fechas].sort();
+    state.fechasDisponibles = sorted;
+
+    const input = document.getElementById('param-fecha');
+    // Permitir programar días que aún no han abierto (hasta 14 días vista)
+    const hoy = new Date();
+    const max = new Date(); max.setDate(hoy.getDate() + 14);
+    input.min = hoy.toISOString().split('T')[0];
+    input.max = max.toISOString().split('T')[0];
+
+    const hint = document.getElementById('fechas-hint');
+    const hintList = document.getElementById('fechas-disponibles-list');
+    if (hint && hintList) {
+      hint.style.display = 'block';
+      hintList.textContent = sorted.slice(0, 6).map(f => {
+        const [y, m, d] = f.split('-');
+        return d + '/' + m;
+      }).join(', ') + (sorted.length > 6 ? '...' : '');
+    }
+    input.addEventListener('change', actualizarEstadoFecha);
+    actualizarEstadoFecha();
+  } catch(e) {
+    console.warn('Error cargando fechas:', e);
+  }
+}
+
+async function restaurarSnipers() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/status`);
+    const allStatus = await res.json();
+    let restored = 0;
+    Object.keys(allStatus).forEach(function(key) {
+      var s = allStatus[key];
+      if (s.status === 'searching' || s.status === 'found' || s.status === 'reserved') {
+        if (!activeSnipers[key]) {
+          activeSnipers[key] = {
+            params: s.params || { fecha: key, tipo: null, desde: '-', hasta: '-' },
+            pollTimer: null
+          };
+          activeSnipers[key].pollTimer = setInterval(function() { pollSniper(key); }, 2000);
+          restored++;
+        }
+      }
+    });
+    if (restored > 0) {
+      document.getElementById('status-panel').classList.add('visible');
+      renderSnipers(null);
+      showToast(restored + ' búsqueda' + (restored > 1 ? 's restauradas' : ' restaurada'));
+    }
+  } catch(e) {
+    console.warn('Error restaurando snipers:', e);
+  }
+}
+
+async function cargarContactos() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/contactos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario: state.session.usuario,
+        clave: state.session.clave,
+        jugadorId: state.session.jugadorId
+      })
+    });
+    const data = await res.json();
+    if (data.ok) state.contacts = data.contactos;
+  } catch (e) {
+    console.warn('No se pudieron cargar contactos:', e);
+  }
+}
+
+async function abrirModalJugadores() {
+  const modal = document.getElementById('modal-jugadores');
+  const list = document.getElementById('contact-list');
+  modal.classList.add('visible');
+
+  const disponibles = state.contacts.filter(c =>
+    !state.players.find(p => p.id === c.id)
+  );
+
+  // Cargar jugadores ocupados para la fecha seleccionada
+  const fechaModal = document.getElementById('param-fecha').value;
+  if (fechaModal && state.contacts.length > 0) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/validar_jugadores`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuario: state.session.usuario,
+          clave: state.session.clave,
+          jugadorId: state.session.jugadorId,
+          fecha: fechaModal,
+          ids: state.contacts.map(c => c.id)
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        if (!state.contactosOcupados) state.contactosOcupados = {};
+        state.contactosOcupados[fechaModal] = data.ocupados || [];
+      }
+    } catch(e) { console.warn('Error validando jugadores:', e); }
+  }
+
+  if (disponibles.length === 0) {
+    list.innerHTML = `<div class="loading-contacts">No hay más contactos disponibles.</div>`;
+    return;
+  }
+
+  const fecha = document.getElementById('param-fecha').value;
+  const ocupados = state.contactosOcupados?.[fecha] || [];
+
+  list.innerHTML = disponibles.map(c => {
+    const ocupado = ocupados.includes(c.id);
+    const nombreSafe = c.nombre.replace(/'/g, "\\'");
+    const onclickAttr = ocupado ? '' : 'addPlayer(' + c.id + ', \'' + nombreSafe + '\')';
+    const styleItem = ocupado ? 'opacity:0.5;cursor:not-allowed;' : '';
+    const bgAvatar = ocupado ? 'var(--error)' : 'var(--slate)';
+    const colorHcp = ocupado ? 'var(--error)' : '';
+    const textoHcp = ocupado ? 'Ya reservado ese día' : (c.hcp !== undefined ? 'Hcp ' + c.hcp : '');
+    return '<div class="contact-item" onclick="' + onclickAttr + '" style="' + styleItem + '">'
+      + '<div class="player-avatar" style="background:' + bgAvatar + ';">' + initials(c.nombre) + '</div>'
+      + '<div class="contact-name">' + c.nombre + '</div>'
+      + '<div class="contact-hcp" style="color:' + colorHcp + '">' + textoHcp + '</div>'
+      + '</div>';
+  }).join('');
+
+  // También opción de añadir por número de socio
+  list.innerHTML += `
+    <div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+      <label style="font-size:0.72rem; color:var(--slate-light); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:0.4rem; display:block;">Añadir por nº de socio</label>
+      <div style="display:flex; gap:0.5rem;">
+        <input type="text" id="socio-manual" placeholder="Nº socio" style="flex:1; padding:0.6rem 0.75rem; border:1.5px solid var(--border); border-radius:8px; font-size:0.85rem;" inputmode="numeric">
+        <button onclick="addPlayerManual()" style="padding:0.6rem 0.85rem; background:var(--green); color:white; border:none; border-radius:8px; cursor:pointer; font-size:0.85rem;">+</button>
+      </div>
+    </div>
+  `;
+}
+
+function addPlayer(id, nombre) {
+  if (state.players.length >= 4) return;
+  state.players.push({ id, nombre, esOwner: false });
+  renderPlayers();
+  cerrarModal();
+  showToast(`${nombre} añadido`);
+}
+
+async function addPlayerManual() {
+  const socioInput = document.getElementById('socio-manual');
+  const socio = socioInput.value.trim();
+  if (!socio) return;
+
+  // Buscar en contactos por ID o añadir genérico
+  const existente = state.contacts.find(c => String(c.id) === socio || String(c.socio) === socio);
+  if (existente) {
+    addPlayer(existente.id, existente.nombre);
+  } else {
+    // Añadir con ID del socio (el backend lo validará)
+    addPlayer(parseInt(socio), `Socio ${socio}`);
+    cerrarModal();
+    showToast(`Jugador ${socio} añadido`);
+  }
+}
+
+function cerrarModal() {
+  document.getElementById('modal-jugadores').classList.remove('visible');
+}
+
+function cerrarModalJugadores(e) {
+  if (e.target === e.currentTarget) cerrarModal();
+}
+
+// ══════════════════════════════════════════════════════
+//  SNIPER – BÚSQUEDA AUTOMÁTICA
+// ══════════════════════════════════════════════════════
+const TIPO_NOMBRE = {11:'Norte 18h', 12:'Norte 9h', 13:'Sur 18h', 14:'Sur 9h', 15:'Pares 3', '11,13':'Norte o Sur 18h'};
+
+// Preferencia de horario: set de botones activos
+var horaSeleccion = new Set(); // 'pronto', 'mitad', 'tarde'
+var horaSeleccionMejora = new Set();
+
+const HORA_HINTS = {
+  '': 'Sin preferencia — se escoge el más temprano',
+  'pronto': 'Primer tercio — el más temprano',
+  'mitad': 'Tercio central — el más centrado',
+  'tarde': 'Último tercio — lo más tarde posible',
+  'pronto_mitad': 'Primeros 2/3 — el más centrado',
+  'mitad_tarde': 'Últimos 2/3 — el más centrado',
+};
+
+function getModoHora(sel) {
+  var arr = ['pronto','mitad','tarde'].filter(function(x){ return sel.has(x); });
+  if (arr.length === 0) return null;
+  if (arr.length === 1) return arr[0];
+  if (arr[0]==='pronto' && arr[1]==='mitad') return 'pronto_mitad';
+  if (arr[0]==='mitad' && arr[1]==='tarde') return 'mitad_tarde';
+  // pronto+tarde sin mitad → tratamos como sin preferencia
+  return null;
+}
+
+function updateHoraUI(sel, prefix) {
+  ['pronto','mitad','tarde'].forEach(function(h) {
+    var btn = document.getElementById((prefix||'hora-') + h);
+    if (!btn) return;
+    btn.classList.remove('active', 'active-alt');
+    if (sel.has(h)) btn.classList.add('active');
+  });
+  var modo = getModoHora(sel);
+  var hint = document.getElementById((prefix||'hora-') + 'hint') || document.getElementById((prefix==='mejora-hora-'?'mejora-hora-hint':'hora-hint'));
+  if (hint) hint.textContent = HORA_HINTS[modo || ''] || '';
+}
+
+function toggleHora(h) {
+  // Allow selecting adjacent pairs only
+  if (horaSeleccion.has(h)) {
+    horaSeleccion.delete(h);
+  } else {
+    // Check if adding creates a valid combo
+    var test = new Set(horaSeleccion);
+    test.add(h);
+    var arr = ['pronto','mitad','tarde'].filter(function(x){ return test.has(x); });
+    if (arr.length <= 2 && getModoHora(test) !== null || arr.length === 1) {
+      horaSeleccion = test;
+    } else {
+      // Reset to just this one
+      horaSeleccion = new Set([h]);
+    }
+  }
+  updateHoraUI(horaSeleccion, 'hora-');
+}
+
+function toggleHoraMejora(h) {
+  if (horaSeleccionMejora.has(h)) {
+    horaSeleccionMejora.delete(h);
+  } else {
+    var test = new Set(horaSeleccionMejora);
+    test.add(h);
+    var arr = ['pronto','mitad','tarde'].filter(function(x){ return test.has(x); });
+    if (arr.length <= 2 && getModoHora(test) !== null || arr.length === 1) {
+      horaSeleccionMejora = test;
+    } else {
+      horaSeleccionMejora = new Set([h]);
+    }
+  }
+  updateHoraUI(horaSeleccionMejora, 'mejora-hora-');
+}
+
+function togglePreferencia() {
+  const tipo = document.getElementById('param-tipo').value;
+  const group = document.getElementById('preferencia-group');
+  group.style.display = tipo === '11,13' ? 'block' : 'none';
+}
+
+async function iniciarBusqueda() {
+  const fecha = document.getElementById('param-fecha').value;
+  const tipo = document.getElementById('param-tipo').value; // keep as string to support '11,13'
+  const desde = document.getElementById('param-desde').value;
+  const hasta = document.getElementById('param-hasta').value;
+  const pollInterval = parseInt(document.getElementById('param-intervalo').value);
+
+  if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
+
+  // Solo bloquear si hay una búsqueda realmente en marcha para ese día
+  if (activeSnipers[fecha]) {
+    var st = activeSnipers[fecha]._lastStatus || 'searching';
+    if (st === 'searching' || st === 'found') {
+      showToast('Ya hay una búsqueda activa para ' + formatFecha(fecha), 'error');
+      return;
+    }
+    clearInterval(activeSnipers[fecha].pollTimer);
+    delete activeSnipers[fecha];
+  }
+
+  const preferencia = tipo === '11,13'
+    ? parseInt(document.getElementById('param-preferencia').value)
+    : null;
+
+  const modo_hora = getModoHora(horaSeleccion);
+
+  const params = {
+    usuario: state.session.usuario,
+    clave: state.session.clave,
+    jugadorId: state.session.jugadorId,
+    fecha, tipo, desde, hasta,
+    pollInterval,
+    preferencia,
+    modo_hora,
+    jugadores: state.players.map(p => p.id)
+  };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error al iniciar', 'error'); return; }
+
+    // Registrar sniper localmente
+    activeSnipers[fecha] = { params, pollTimer: null, _lastStatus: 'searching' };
+    activeSnipers[fecha].pollTimer = setInterval(() => pollSniper(fecha), 2000);
+    pollSniper(fecha); // inmediato — también renderiza
+    showToast('Búsqueda iniciada para ' + formatFecha(fecha));
+
+
+  } catch (e) {
+    showToast('Sin conexión con el servidor', 'error');
+  }
+}
+
+async function pollSniper(key) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/status`);
+    const allStatus = await res.json();
+    const data = allStatus[key] || {};
+
+    // Track last known status for failsafe
+    if (activeSnipers[key]) activeSnipers[key]._lastStatus = data.status || 'idle';
+
+    if (data.status === 'reserved') {
+      if (activeSnipers[key]) clearInterval(activeSnipers[key].pollTimer);
+      renderSnipers(allStatus);
+      renderCompletadas(allStatus);
+      mostrarExito(data.reserva, key);
+      return;
+    }
+
+    if (data.status === 'idle' && activeSnipers[key]) {
+      clearInterval(activeSnipers[key].pollTimer);
+      delete activeSnipers[key];
+    }
+
+    if (data.status === 'cancelled' && activeSnipers[key]) {
+      clearInterval(activeSnipers[key].pollTimer);
+      delete activeSnipers[key];
+      showToast('Reserva cancelada externamente', 'error');
+    }
+
+    renderSnipers(allStatus);
+  } catch (e) {
+    console.warn('Poll error:', e);
+  }
+}
+
+function renderSnipers(allStatus) {
+  var panel = document.getElementById('status-panel');
+  var list = document.getElementById('snipers-list');
+  var keys = Object.keys(activeSnipers).filter(function(k) {
+    var s = allStatus && allStatus[k];
+    return !s || s.status !== 'reserved';
+  });
+
+  if (keys.length === 0) {
+    panel.classList.remove('visible');
+    list.innerHTML = '';
+    return;
+  }
+
+  panel.classList.add('visible');
+
+  // Si no tenemos el estado, pedirlo y re-renderizar
+  if (!allStatus) {
+    fetch(BACKEND_URL + '/status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { renderSnipers(d); })
+      .catch(function() {});
+    return;
+  }
+
+  window._sniperKeyMap = {};
+  list.innerHTML = keys.map(function(key) {
+    var s = allStatus[key] || {};
+    var status = s.status || 'searching';
+    var attempts = s.attempts || 0;
+    var mensaje = s.mensaje || 'Buscando...';
+    var p = (activeSnipers[key] && activeSnipers[key].params) || {};
+    var isReserved = status === 'reserved';
+    var isFound = status === 'found';
+    var isMejora = key.indexOf('mejora_') === 0;
+    var titulo = isMejora
+      ? 'Mejora ' + formatFecha(p.fecha) + ' ' + (p.hora_actual || '')
+      : formatFecha(key);
+    var tipoStr = String(p.tipo || '');
+    var tipoLabel;
+    if (tipoStr === '11,13') {
+      var prefNombre = p.preferencia === 11 ? 'Norte' : p.preferencia === 13 ? 'Sur' : '';
+      var altNombre  = p.preferencia === 11 ? 'Sur'   : p.preferencia === 13 ? 'Norte' : '';
+      tipoLabel = prefNombre
+        ? '<strong>' + prefNombre + '</strong> o ' + altNombre + ' 18h'
+        : 'Norte o Sur 18h';
+    } else {
+      tipoLabel = TIPO_NOMBRE[tipoStr] || tipoStr;
+    }
+    var subtitulo = isMejora
+      ? (p.desde || '') + '-' + (p.hasta || '') + ' ' + tipoLabel
+      : tipoLabel;
+
+    var safeId = 'sk_' + Object.keys(window._sniperKeyMap).length;
+    window._sniperKeyMap[safeId] = key;
+
+    var card = '<div class="status-card' + (isReserved ? ' success' : '') + '" style="text-align:left;padding:1rem;">';
+    card += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">';
+    card += '<div>';
+    card += '<span style="font-family:\'Cormorant Garamond\',serif;font-size:1.05rem;font-weight:600;color:var(--slate);">';
+    if (!isReserved && !isFound) card += '<span class="pulse-dot"></span> ';
+    card += titulo;
+    card += '</span>';
+    if (subtitulo) card += ' <span style="font-size:0.75rem;color:var(--slate-light);">' + subtitulo + '</span>';
+    card += '</div>';
+    if (!isReserved) {
+            card += '<button onclick="cancelarSniperById(\'' + safeId + '\')" style="background:none;border:none;color:var(--slate-light);cursor:pointer;font-size:1.1rem;padding:0.6rem;line-height:1;margin:-0.35rem -0.35rem -0.35rem 0;border-radius:8px;" title="Cancelar">&#x2715;</button>';
+    }
+    card += '</div>';
+    card += '<div style="font-size:0.8rem;color:var(--slate-light);">' + mensaje + '</div>';
+    if (!isReserved) {
+      var desde_h = p.desde || '';
+      var hasta_h = p.hasta || '';
+      var n_jug = (p.jugadores && p.jugadores.length) ? p.jugadores.length : 1;
+      var jug_txt = n_jug + ' jugador' + (n_jug > 1 ? 'es' : '');
+      card += '<div style="font-size:0.72rem;color:var(--slate-light);margin-top:0.25rem;">';
+      card += desde_h + '\u2013' + hasta_h + ' &middot; ' + jug_txt + ' &middot; intento ' + attempts + ' &middot; cada ' + (s.pollInterval || 30) + 's';
+      card += '</div>';
+    }
+    if (isReserved && s.reserva) {
+      card += '<div style="font-size:0.82rem;color:var(--green);margin-top:0.35rem;font-weight:500;">';
+      card += s.reserva.hora + ' &middot; ' + (TIPO_NOMBRE[String(s.reserva.tipo)] || '') + ' &middot; Ref #' + s.reserva.id;
+      card += '</div>';
+    }
+    card += '</div>';
+    return card;
+  }).join('');
+}
+
+function cancelarSniperById(safeId) {
+  var key = window._sniperKeyMap && window._sniperKeyMap[safeId];
+  if (key) cancelarSniper(key);
+}
+
+function cancelarSniper(key) {
+  if (activeSnipers[key]) {
+    clearInterval(activeSnipers[key].pollTimer);
+    delete activeSnipers[key];
+  }
+  var stopBody = key.indexOf('mejora_') === 0 ? { key: key } : { fecha: key };
+  fetch(BACKEND_URL + '/stop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stopBody)
+  }).catch(function() {});
+  renderSnipers(null);
+  showToast('Busqueda cancelada');
+}
+
+function formatFecha(f) {
+  if (!f) return '';
+  const [y, m, d] = f.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+// ══════════════════════════════════════════════════════
+//  ÉXITO
+// ══════════════════════════════════════════════════════
+window._completadas = window._completadas || {};
+
+function renderCompletadas(allStatus) {
+  var panel = document.getElementById('completadas-panel');
+  var list = document.getElementById('completadas-list');
+  if (!panel || !list) return;
+  if (allStatus) {
+    Object.keys(allStatus).forEach(function(key) {
+      var s = allStatus[key];
+      if (s.status === 'reserved' && s.reserva) {
+        window._completadas[key] = { reserva: s.reserva, isMejora: key.indexOf('mejora_') === 0 };
+      } else if (s.status === 'cancelled') {
+        delete window._completadas[key];
+      }
+    });
+  }
+  var keys = Object.keys(window._completadas);
+  if (!keys.length) { panel.style.display = 'none'; list.innerHTML = ''; return; }
+  panel.style.display = 'block';
+  list.innerHTML = keys.map(function(key) {
+    var e = window._completadas[key], r = e.reserva;
+    var campo = TIPO_NOMBRE[String(r.tipo)] || '';
+    var linea = (e.isMejora && r.hora_anterior ? r.hora_anterior + ' \u2192 ' : '') + r.hora + (campo ? ' \u00b7 ' + campo : '');
+    return '<div class="card" style="margin:0;border-left:3px solid var(--green);display:flex;gap:0.65rem;align-items:center;">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">\u2713</div>'
+      + '<div><div style="font-size:0.85rem;font-weight:500;color:var(--slate);">' + (e.isMejora ? 'Mejora' : 'Reserva') + ' \u00b7 ' + r.fecha + '</div>'
+      + '<div style="font-size:0.75rem;color:var(--slate-light);">' + linea + '</div>'
+      + (r.id ? '<div style="font-size:0.7rem;color:var(--green);">Ref #' + r.id + '</div>' : '')
+      + '</div></div>';
+  }).join('');
+}
+
+function mostrarExito(reserva, fecha) {
+  // Mostrar en el panel de snipers (ya se renderiza con estado reserved)
+  renderSnipers(null);
+  showToast(`¡Reserva confirmada! ${reserva.hora} el ${reserva.fecha} 🎉`, 'success');
+}
+
+async function anularReservaId(id) {
+  if (!confirm('Cancelar esta reserva?')) return;
+  try {
+    const res = await fetch(BACKEND_URL + '/anular', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave, reservaId: id })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Reserva cancelada', 'success');
+      // Limpiar inmediatamente cualquier sniper asociado a esta reserva
+      Object.keys(activeSnipers).forEach(function(key) {
+        var s = activeSnipers[key];
+        if (s && (s._lastStatus === 'reserved' || s._lastStatus === 'cancelled')) {
+          // Check if this sniper's reserva matches the cancelled id
+          clearInterval(s.pollTimer);
+          s._lastStatus = 'cancelled';
+          delete activeSnipers[key];
+        }
+      });
+      // Also clear from completadas
+      if (window._completadas) {
+        Object.keys(window._completadas).forEach(function(key) {
+          var c = window._completadas[key];
+          if (c && c.reserva && c.reserva.id === id) {
+            delete window._completadas[key];
+          }
+        });
+      }
+      renderSnipers(null);
+      renderCompletadas(null);
+      cargarReservas();
+    } else {
+      showToast(data.error || 'No se pudo cancelar', 'error');
+    }
+  } catch(e) { showToast('Error de conexion', 'error'); }
+}
+
+async function anularReserva() {
+  if (!state.reservation?.id) return;
+  if (!confirm('¿Seguro que quieres anular esta reserva?')) return;
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/anular`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario: state.session.usuario,
+        clave: state.session.clave,
+        reservaId: state.reservation.id
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Reserva anulada', 'success');
+      state.reservation = null;
+      resetToForm();
+    } else {
+      showToast(data.error || 'No se pudo anular', 'error');
+    }
+  } catch (e) {
+    showToast('Error de conexión', 'error');
+  }
+}
+
+function resetToForm() {
+  document.getElementById('success-panel').style.display = 'none';
+  renderSnipers(null);
+}
+
+// ══════════════════════════════════════════════════════
+//  MIS RESERVAS
+// ══════════════════════════════════════════════════════
+let mejoraPendiente = null; // reserva sobre la que configurar mejora
+
+async function cargarReservas() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/reservas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jugadorId: state.session.jugadorId })
+    });
+    const data = await res.json();
+    if (!data.ok || !data.reservas?.length) {
+      document.getElementById('reservas-panel').style.display = 'none';
+      return;
+    }
+    renderReservas(data.reservas);
+  } catch(e) {
+    console.warn('Error cargando reservas:', e);
+  }
+}
+
+function renderReservas(reservas) {
+  window._reservasList = reservas;
+  const panel = document.getElementById('reservas-panel');
+  const list = document.getElementById('reservas-list');
+
+  const futuras = reservas.filter(r => r.fecha && r.hora);
+  if (!futuras.length) { panel.style.display = 'none'; return; }
+
+  panel.style.display = 'block';
+  list.innerHTML = futuras.map(r => `
+    <div class="reserva-item">
+      <div class="reserva-info">
+        <div class="reserva-fecha">${formatFecha(r.fecha)}</div>
+        <div class="reserva-hora">${r.hora}</div>
+        <div class="reserva-campo">${TIPO_NOMBRE[r.cod_instalacion] || r.descripcion || '—'}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.35rem;align-items:stretch;">
+        <button class="btn-mejorar" onclick='abrirModalMejora(${JSON.stringify(r)})'>
+          ↑ Mejorar
+        </button>
+        <button onclick='anularReservaId(${r.id})' style="padding:0.4rem 0.5rem;background:transparent;border:1.5px solid #f5c6c2;border-radius:7px;color:var(--error);font-size:0.7rem;font-family:DM Sans,sans-serif;cursor:pointer;">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function abrirModalMejoraPorId(id) {
+  const reservas = window._reservasList || [];
+  const reserva = reservas.find(r => r.id === id);
+  if (reserva) abrirModalMejora(reserva);
+}
+
+function abrirModalMejora(reserva) {
+  mejoraPendiente = reserva;
+  document.getElementById('mejora-reserva-info').innerHTML =
+    `<strong>${formatFecha(reserva.fecha)}</strong> · ${reserva.hora} · ${TIPO_NOMBRE[reserva.cod_instalacion] || '—'}`;
+
+  // Poner franja hasta la hora actual como límite superior por defecto
+  if (reserva.hora) {
+    document.getElementById('mejora-hasta').value = reserva.hora;
+  }
+
+  document.getElementById('modal-mejora').classList.add('visible');
+}
+
+function toggleMejoraPreferencia() {
+  const tipo = document.getElementById('mejora-tipo').value;
+  document.getElementById('mejora-pref-group').style.display = tipo === '11,13' ? 'block' : 'none';
+}
+
+function cerrarModalMejora(e) {
+  if (e.target === e.currentTarget) cerrarModal2();
+}
+
+function cerrarModal2() {
+  document.getElementById('modal-mejora').classList.remove('visible');
+  mejoraPendiente = null;
+}
+
+async function iniciarMejora() {
+  if (!mejoraPendiente) return;
+
+  const tipo = document.getElementById('mejora-tipo').value;
+  const desde = document.getElementById('mejora-desde').value;
+  const hasta = document.getElementById('mejora-hasta').value;
+  const pollInterval = parseInt(document.getElementById('mejora-intervalo').value);
+  const preferencia = tipo === '11,13'
+    ? parseInt(document.getElementById('mejora-preferencia').value)
+    : null;
+
+  const r = mejoraPendiente;
+  const key = `mejora_${r.id}`;
+
+  const modo_hora_mejora = getModoHora(horaSeleccionMejora);
+
+  const body = {
+    usuario: state.session.usuario,
+    clave: state.session.clave,
+    jugadorId: state.session.jugadorId,
+    reservaId: r.id,
+    fecha: r.fecha,
+    hora_actual: r.hora,
+    cod_instalacion_actual: r.cod_instalacion,
+    tipo, desde, hasta, pollInterval, preferencia,
+    modo_hora: modo_hora_mejora,
+    // Usar todos los jugadores de la reserva original, no solo el titular
+    jugadores: (r.jugadores && r.jugadores.length > 0) ? r.jugadores : [state.session.jugadorId]
+  };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/mover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+
+    if (!data.ok) { showToast(data.error || 'Error al iniciar', 'error'); return; }
+
+    cerrarModal2();
+
+    // Registrar como sniper activo con clave especial
+    activeSnipers[key] = { params: { ...body, tipo, fecha: r.fecha }, pollTimer: null, _lastStatus: 'searching' };
+    activeSnipers[key].pollTimer = setInterval(() => pollSniper(key), 2000);
+    document.getElementById('status-panel').classList.add('visible');
+    renderSnipers(null);
+    showToast(`Buscando mejora para ${formatFecha(r.fecha)} ${r.hora}`);
+  } catch(e) {
+    showToast('Error de conexión', 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════════
+function showToast(msg, tipo = '') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = `toast${tipo ? ' ' + tipo + '-toast' : ''} visible`;
+  setTimeout(() => { toast.className = `toast${tipo ? ' ' + tipo + '-toast' : ''}`; }, 3000);
+}
+</script>
+</body>
+</html>
