@@ -230,7 +230,7 @@ def calcular_inicio_verificacion(fecha, inicio_param=None):
     """
     Cuándo empezar a comprobar si el día ya está abierto (hora de Madrid).
     - inicio_param explícito ('YYYY-MM-DDTHH:MM') si viene del frontend.
-    - Sábado/domingo: abren el jueves de esa misma semana -> jueves a las 03:00.
+    - Sábado/domingo: abren el jueves de esa misma semana -> jueves a las 05:00.
     - Resto de días: ahora.
     """
     ahora = ahora_madrid()
@@ -244,9 +244,44 @@ def calcular_inicio_verificacion(fecha, inicio_param=None):
     d = datetime.strptime(fecha, "%Y-%m-%d")
     if d.weekday() in (5, 6):
         jueves = d - timedelta(days=d.weekday() - 3)
-        ini = jueves.replace(hour=3, minute=0, tzinfo=TZ_MADRID)
+        ini = jueves.replace(hour=5, minute=0, tzinfo=TZ_MADRID)
         return max(ini, ahora)
     return ahora
+
+
+APERTURAS_FILE = os.environ.get("APERTURAS_FILE", "aperturas.log")
+aperturas = []  # también en memoria para consultarlas vía /aperturas
+
+
+def registrar_apertura(fecha, detectada, ultima_cerrada):
+    """Guarda cuándo se detectó que un día abrió para reservas (para ajustar la hora de comprobación)."""
+    linea = {
+        "fecha_juego": fecha,
+        "detectado_abierto": detectada.strftime("%Y-%m-%d %H:%M:%S"),
+        "ultima_vez_cerrado": ultima_cerrada.strftime("%Y-%m-%d %H:%M:%S") if ultima_cerrada else None,
+    }
+    aperturas.append(linea)
+    print(f"[APERTURA] {json.dumps(linea)}")
+    try:
+        with open(APERTURAS_FILE, "a") as f:
+            f.write(json.dumps(linea) + "\n")
+    except Exception as e:
+        print(f"[APERTURA] No se pudo escribir el fichero: {e}")
+    rango = f"entre las {ultima_cerrada:%H:%M:%S} y las {detectada:%H:%M:%S}" if ultima_cerrada else f"antes de las {detectada:%H:%M:%S}"
+    send_telegram(f"🔓 <b>Reservas abiertas</b> para el {datetime.strptime(fecha, '%Y-%m-%d'):%d/%m}\nAbrieron {rango} ({detectada:%d/%m}). Buscando hora…")
+
+
+@app.route("/aperturas", methods=["GET"])
+def aperturas_endpoint():
+    """Historial de horas de apertura detectadas (memoria + fichero)."""
+    registros = list(aperturas)
+    try:
+        with open(APERTURAS_FILE) as f:
+            de_fichero = [json.loads(l) for l in f if l.strip()]
+        registros = de_fichero + [r for r in registros if r not in de_fichero]
+    except FileNotFoundError:
+        pass
+    return jsonify({"ok": True, "aperturas": registros})
 
 
 @app.route("/fechas", methods=["POST"])
@@ -1006,6 +1041,7 @@ def sniper_loop(fecha, params):
     # ── Fase de espera: el día puede no estar abierto todavía ──
     DIAS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
     inicio = calcular_inicio_verificacion(fecha, params.get("inicio"))
+    ultima_cerrada = None
     while not stop_event.is_set():
         ahora = ahora_madrid()
         if ahora < inicio:
@@ -1016,9 +1052,12 @@ def sniper_loop(fecha, params):
         if abiertas is None or fecha in abiertas:
             if abiertas is not None:
                 print(f"[Sniper:{fecha}] Día abierto para reservas")
+                if ultima_cerrada:  # solo si lo vimos cerrado antes: así sabemos cuándo abrió
+                    registrar_apertura(fecha, ahora, ultima_cerrada)
             break  # abierto (o no se pudo comprobar): pasar a buscar hora
         # Ventana de apertura (07:55-08:15): comprobar cada 10s para no llegar tarde
         en_ventana = ahora.replace(hour=7, minute=55, second=0) <= ahora <= ahora.replace(hour=8, minute=15, second=0)
+        ultima_cerrada = ahora
         espera = 10 if en_ventana else poll_interval
         set_state(mensaje=f"Día aún no abierto. Comprobando cada {espera}s…")
         print(f"[Sniper:{fecha}] Aún no abierto ({ahora:%H:%M:%S}), reintento en {espera}s")
