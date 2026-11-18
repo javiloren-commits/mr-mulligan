@@ -10,6 +10,9 @@ import threading
 import time
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+TZ_MADRID = ZoneInfo("Europe/Madrid")
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -192,30 +195,68 @@ def stop_sniper():
     return jsonify({"ok": True, "detenidos": targets})
 
 
-@app.route("/fechas", methods=["POST"])
-def fechas_endpoint():
-    """Devuelve las fechas disponibles para reservar."""
+def ahora_madrid():
+    return datetime.now(TZ_MADRID)
+
+
+def parse_net_date(raw):
+    """'/Date(1778104800000+0200)/' -> datetime en hora de Madrid."""
+    import re
+    m = re.search(r"/Date\((\d+)", str(raw))
+    if not m:
+        return None
+    return datetime.fromtimestamp(int(m.group(1)) / 1000, TZ_MADRID)
+
+
+def get_fechas_abiertas():
+    """Fechas (YYYY-MM-DD) que el club ya permite reservar. None si falla la consulta."""
     try:
         url = f"{BASE_URL}/Reservas/json/diaspermitidos/{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA}"
         r = requests.get(url, headers=HEADERS, timeout=10)
-        data = r.json()
-        import re, datetime as dt
-        dias = data.get("DiasPermitidosResult", []) or []
+        dias = r.json().get("DiasPermitidosResult", []) or []
         fechas = []
         for d in dias:
-            # API devuelve lista de strings: "/Date(1778104800000+0200)/"
-            hora_raw = d if isinstance(d, str) else (d.get("fecha") or d.get("Fecha") or "") if isinstance(d, dict) else ""
-            if hora_raw and "/Date(" in hora_raw:
-                m = re.search(r"/Date\((\d+)", hora_raw)
-                if m:
-                    ts = int(m.group(1)) // 1000
-                    fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
-                    fechas.append(fecha_dt.strftime("%Y-%m-%d"))
-        print(f"[fechas] {len(fechas)} fechas disponibles: {fechas[:5]}")
-        return jsonify({"ok": True, "fechas": fechas})
+            raw = d if isinstance(d, str) else ((d.get("fecha") or d.get("Fecha") or "") if isinstance(d, dict) else "")
+            f = parse_net_date(raw)
+            if f:
+                fechas.append(f.strftime("%Y-%m-%d"))
+        return sorted(set(fechas))
     except Exception as e:
         print(f"[fechas] Error: {e}")
+        return None
+
+
+def calcular_inicio_verificacion(fecha, inicio_param=None):
+    """
+    Cuándo empezar a comprobar si el día ya está abierto (hora de Madrid).
+    - inicio_param explícito ('YYYY-MM-DDTHH:MM') si viene del frontend.
+    - Sábado/domingo: abren el jueves de esa misma semana -> jueves a las 03:00.
+    - Resto de días: ahora.
+    """
+    ahora = ahora_madrid()
+    if inicio_param:
+        try:
+            ini = datetime.fromisoformat(inicio_param)
+            ini = ini.replace(tzinfo=TZ_MADRID) if ini.tzinfo is None else ini.astimezone(TZ_MADRID)
+            return max(ini, ahora)
+        except ValueError:
+            pass
+    d = datetime.strptime(fecha, "%Y-%m-%d")
+    if d.weekday() in (5, 6):
+        jueves = d - timedelta(days=d.weekday() - 3)
+        ini = jueves.replace(hour=3, minute=0, tzinfo=TZ_MADRID)
+        return max(ini, ahora)
+    return ahora
+
+
+@app.route("/fechas", methods=["POST"])
+def fechas_endpoint():
+    """Devuelve las fechas disponibles para reservar."""
+    fechas = get_fechas_abiertas()
+    if fechas is None:
         return jsonify({"ok": False, "fechas": []})
+    print(f"[fechas] {len(fechas)} fechas disponibles: {fechas[:5]}")
+    return jsonify({"ok": True, "fechas": fechas})
 
 
 @app.route("/validar_jugadores", methods=["POST"])
@@ -961,6 +1002,27 @@ def sniper_loop(fecha, params):
 
     tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3", "11,13": "Norte o Sur 18h"}
     print(f"[Sniper:{fecha}] Iniciando. Tipo:{tipo} {desde}-{hasta} Jugadores:{jugadores} Intervalo:{poll_interval}s")
+
+    # ── Fase de espera: el día puede no estar abierto todavía ──
+    DIAS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
+    inicio = calcular_inicio_verificacion(fecha, params.get("inicio"))
+    while not stop_event.is_set():
+        ahora = ahora_madrid()
+        if ahora < inicio:
+            set_state(mensaje=f"Programada: verificará apertura desde el {DIAS[inicio.weekday()]} {inicio:%d/%m} a las {inicio:%H:%M}")
+            stop_event.wait(min((inicio - ahora).total_seconds(), 300))
+            continue
+        abiertas = get_fechas_abiertas()
+        if abiertas is None or fecha in abiertas:
+            if abiertas is not None:
+                print(f"[Sniper:{fecha}] Día abierto para reservas")
+            break  # abierto (o no se pudo comprobar): pasar a buscar hora
+        # Ventana de apertura (07:55-08:15): comprobar cada 10s para no llegar tarde
+        en_ventana = ahora.replace(hour=7, minute=55, second=0) <= ahora <= ahora.replace(hour=8, minute=15, second=0)
+        espera = 10 if en_ventana else poll_interval
+        set_state(mensaje=f"Día aún no abierto. Comprobando cada {espera}s…")
+        print(f"[Sniper:{fecha}] Aún no abierto ({ahora:%H:%M:%S}), reintento en {espera}s")
+        stop_event.wait(espera)
 
     while not stop_event.is_set():
         with snipers_lock:
