@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Mr. Mulligan v2.5 - reservas programadas 05:00 -->
+<!-- Mr. Mulligan v2.6 - API nueva del club, 9/18 hoyos y salida por el 10 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -901,17 +901,20 @@
             <div id="fecha-estado" style="font-size:0.72rem;margin-top:0.2rem;font-weight:500;"></div>
           </div>
 
-          <div class="form-group full">
-            <label>Tipo de salida</label>
+          <div class="form-group">
+            <label>Hoyos</label>
             <div class="select-wrapper">
-              <select id="param-tipo" onchange="togglePreferencia()">
-                <option value="11">Norte 18 hoyos</option>
-                <option value="13">Sur 18 hoyos</option>
-                <option value="11,13">Norte o Sur 18 hoyos</option>
-                <option value="12">Norte 9 hoyos</option>
-                <option value="14">Sur 9 hoyos</option>
-                <option value="15">Pares 3</option>
+              <select id="param-modalidad" onchange="rellenarSalidas('param')">
+                <option value="7">18 hoyos</option>
+                <option value="31">9 hoyos</option>
               </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Salida</label>
+            <div class="select-wrapper">
+              <select id="param-tipo" onchange="togglePreferencia()"></select>
             </div>
           </div>
 
@@ -926,12 +929,9 @@
           </div>
 
           <div class="form-group full" id="preferencia-group" style="display:none;">
-            <label>Campo preferido</label>
+            <label>Salida preferida</label>
             <div class="select-wrapper">
-              <select id="param-preferencia">
-                <option value="11">Preferir Norte</option>
-                <option value="13">Preferir Sur</option>
-              </select>
+              <select id="param-preferencia"></select>
             </div>
           </div>
 
@@ -1002,25 +1002,16 @@
 
     <div class="params-grid">
       <div class="form-group full">
-        <label>Campo objetivo</label>
+        <label>Salida objetivo</label>
+        <input type="hidden" id="mejora-modalidad" value="7">
         <div class="select-wrapper">
-          <select id="mejora-tipo" onchange="toggleMejoraPreferencia()">
-            <option value="11">Norte 18 hoyos</option>
-            <option value="13">Sur 18 hoyos</option>
-            <option value="11,13">Norte o Sur 18h</option>
-            <option value="12">Norte 9 hoyos</option>
-            <option value="14">Sur 9 hoyos</option>
-            <option value="15">Pares 3</option>
-          </select>
+          <select id="mejora-tipo" onchange="toggleMejoraPreferencia()"></select>
         </div>
       </div>
       <div class="form-group" id="mejora-pref-group" style="display:none;grid-column:1/-1;">
-        <label>Campo preferido</label>
+        <label>Salida preferida</label>
         <div class="select-wrapper">
-          <select id="mejora-preferencia">
-            <option value="11">Preferir Norte</option>
-            <option value="13">Preferir Sur</option>
-          </select>
+          <select id="mejora-preferencia"></select>
         </div>
       </div>
       <div class="form-group">
@@ -1102,6 +1093,7 @@ let activeSnipers = {};
 //  INICIALIZACIÓN
 // ══════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
+  rellenarSalidas('param');
   // Fecha por defecto: mañana
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -1457,7 +1449,56 @@ function cerrarModalJugadores(e) {
 // ══════════════════════════════════════════════════════
 //  SNIPER – BÚSQUEDA AUTOMÁTICA
 // ══════════════════════════════════════════════════════
-const TIPO_NOMBRE = {11:'Norte 18h', 12:'Norte 9h', 13:'Sur 18h', 14:'Sur 9h', 15:'Pares 3', '11,13':'Norte o Sur 18h'};
+// Salidas del club (nov-2026): 18 hoyos (tipo 7) por el 1 Norte, 1 Sur o 10 Sur; 9 hoyos (tipo 31) solo por el 1 Norte
+var SALIDA_NOMBRE = {11:'Norte h1', 13:'Sur h1', 14:'Sur h10', 15:'Pares 3'};
+var SALIDAS_POR_MODALIDAD = {
+  '7': [['11','Norte (hoyo 1)'], ['13','Sur (hoyo 1)'], ['14','Sur (hoyo 10)'],
+        ['11,13','Norte o Sur (hoyo 1)'], ['11,13,14','Cualquier salida']],
+  '31': [['11','Norte (hoyo 1)']]
+};
+
+function nombreModalidad(m) { return String(m) === '31' ? '9h' : '18h'; }
+
+// Etiqueta legible de una búsqueda: tipo '11,13' + preferencia 13 + modalidad 7 -> "<b>Sur h1</b> o Norte h1 · 18h"
+function etiquetaSalida(tipo, preferencia, modalidad) {
+  var cods = String(tipo || '').split(',').filter(function(x){ return x; });
+  if (!cods.length) return '';
+  var pref = preferencia ? String(preferencia) : null;
+  if (cods.length > 1 && pref && cods.indexOf(pref) >= 0) {
+    cods = [pref].concat(cods.filter(function(c){ return c !== pref; }));
+  }
+  var nombres = cods.map(function(c, i) {
+    var n = SALIDA_NOMBRE[c] || c;
+    return (i === 0 && cods.length > 1 && pref) ? '<strong>' + n + '</strong>' : n;
+  });
+  return nombres.join(' o ') + ' \u00b7 ' + nombreModalidad(modalidad);
+}
+
+function rellenarSalidas(prefix, valorTipo) {
+  var modalidad = document.getElementById(prefix + '-modalidad').value;
+  var sel = document.getElementById(prefix + '-tipo');
+  var opciones = SALIDAS_POR_MODALIDAD[modalidad] || SALIDAS_POR_MODALIDAD['7'];
+  var previo = valorTipo || sel.value;
+  sel.innerHTML = opciones.map(function(o) {
+    return '<option value="' + o[0] + '">' + o[1] + '</option>';
+  }).join('');
+  if (opciones.some(function(o){ return o[0] === previo; })) sel.value = previo;
+  if (prefix === 'param') togglePreferencia(); else toggleMejoraPreferencia();
+}
+
+// Muestra el selector de preferencia si la salida combina varias opciones
+function actualizarPreferencia(tipo, groupId, selId) {
+  var cods = String(tipo).split(',');
+  var group = document.getElementById(groupId);
+  var sel = document.getElementById(selId);
+  if (cods.length < 2) { group.style.display = 'none'; return; }
+  var previo = sel.value;
+  sel.innerHTML = cods.map(function(c) {
+    return '<option value="' + c + '">Preferir ' + (SALIDA_NOMBRE[c] || c) + '</option>';
+  }).join('');
+  if (cods.indexOf(previo) >= 0) sel.value = previo;
+  group.style.display = 'block';
+}
 
 // Preferencia de horario: set de botones activos
 var horaSeleccion = new Set(); // 'pronto', 'mitad', 'tarde'
@@ -1530,14 +1571,13 @@ function toggleHoraMejora(h) {
 }
 
 function togglePreferencia() {
-  const tipo = document.getElementById('param-tipo').value;
-  const group = document.getElementById('preferencia-group');
-  group.style.display = tipo === '11,13' ? 'block' : 'none';
+  actualizarPreferencia(document.getElementById('param-tipo').value, 'preferencia-group', 'param-preferencia');
 }
 
 async function iniciarBusqueda() {
   const fecha = document.getElementById('param-fecha').value;
-  const tipo = document.getElementById('param-tipo').value; // keep as string to support '11,13'
+  const tipo = document.getElementById('param-tipo').value; // string: '11', '11,13', '11,13,14'
+  const modalidad = parseInt(document.getElementById('param-modalidad').value);
   const desde = document.getElementById('param-desde').value;
   const hasta = document.getElementById('param-hasta').value;
   const pollInterval = parseInt(document.getElementById('param-intervalo').value);
@@ -1555,7 +1595,7 @@ async function iniciarBusqueda() {
     delete activeSnipers[fecha];
   }
 
-  const preferencia = tipo === '11,13'
+  const preferencia = tipo.indexOf(',') >= 0
     ? parseInt(document.getElementById('param-preferencia').value)
     : null;
 
@@ -1565,7 +1605,7 @@ async function iniciarBusqueda() {
     usuario: state.session.usuario,
     clave: state.session.clave,
     jugadorId: state.session.jugadorId,
-    fecha, tipo, desde, hasta,
+    fecha, tipo, modalidad, desde, hasta,
     pollInterval,
     preferencia,
     modo_hora,
@@ -1665,17 +1705,7 @@ function renderSnipers(allStatus) {
     var titulo = isMejora
       ? 'Mejora ' + formatFecha(p.fecha) + ' ' + (p.hora_actual || '')
       : formatFecha(key);
-    var tipoStr = String(p.tipo || '');
-    var tipoLabel;
-    if (tipoStr === '11,13') {
-      var prefNombre = p.preferencia === 11 ? 'Norte' : p.preferencia === 13 ? 'Sur' : '';
-      var altNombre  = p.preferencia === 11 ? 'Sur'   : p.preferencia === 13 ? 'Norte' : '';
-      tipoLabel = prefNombre
-        ? '<strong>' + prefNombre + '</strong> o ' + altNombre + ' 18h'
-        : 'Norte o Sur 18h';
-    } else {
-      tipoLabel = TIPO_NOMBRE[tipoStr] || tipoStr;
-    }
+    var tipoLabel = etiquetaSalida(p.tipo, p.preferencia, p.modalidad);
     var subtitulo = isMejora
       ? (p.desde || '') + '-' + (p.hasta || '') + ' ' + tipoLabel
       : tipoLabel;
@@ -1708,7 +1738,7 @@ function renderSnipers(allStatus) {
     }
     if (isReserved && s.reserva) {
       card += '<div style="font-size:0.82rem;color:var(--green);margin-top:0.35rem;font-weight:500;">';
-      card += s.reserva.hora + ' &middot; ' + (TIPO_NOMBRE[String(s.reserva.tipo)] || '') + ' &middot; Ref #' + s.reserva.id;
+      card += s.reserva.hora + ' &middot; ' + etiquetaSalida(s.reserva.tipo, null, s.reserva.modalidad) + ' &middot; Ref #' + s.reserva.id;
       card += '</div>';
     }
     card += '</div>';
@@ -1766,7 +1796,7 @@ function renderCompletadas(allStatus) {
   panel.style.display = 'block';
   list.innerHTML = keys.map(function(key) {
     var e = window._completadas[key], r = e.reserva;
-    var campo = TIPO_NOMBRE[String(r.tipo)] || '';
+    var campo = etiquetaSalida(r.tipo, null, r.modalidad);
     var linea = (e.isMejora && r.hora_anterior ? r.hora_anterior + ' \u2192 ' : '') + r.hora + (campo ? ' \u00b7 ' + campo : '');
     return '<div class="card" style="margin:0;border-left:3px solid var(--green);display:flex;gap:0.65rem;align-items:center;">'
       + '<div style="width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">\u2713</div>'
@@ -1789,7 +1819,7 @@ async function anularReservaId(id) {
     const res = await fetch(BACKEND_URL + '/anular', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave, reservaId: id })
+      body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave, jugadorId: state.session.jugadorId, reservaId: id })
     });
     const data = await res.json();
     if (data.ok) {
@@ -1833,6 +1863,7 @@ async function anularReserva() {
       body: JSON.stringify({
         usuario: state.session.usuario,
         clave: state.session.clave,
+        jugadorId: state.session.jugadorId,
         reservaId: state.reservation.id
       })
     });
@@ -1864,7 +1895,7 @@ async function cargarReservas() {
     const res = await fetch(`${BACKEND_URL}/reservas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jugadorId: state.session.jugadorId })
+      body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave, jugadorId: state.session.jugadorId })
     });
     const data = await res.json();
     if (!data.ok || !data.reservas?.length) {
@@ -1891,7 +1922,7 @@ function renderReservas(reservas) {
       <div class="reserva-info">
         <div class="reserva-fecha">${formatFecha(r.fecha)}</div>
         <div class="reserva-hora">${r.hora}</div>
-        <div class="reserva-campo">${TIPO_NOMBRE[r.cod_instalacion] || r.descripcion || '—'}</div>
+        <div class="reserva-campo">${r.cod_instalacion ? etiquetaSalida(r.cod_instalacion, null, r.modalidad) : (r.descripcion || '—')}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:0.35rem;align-items:stretch;">
         <button class="btn-mejorar" onclick='abrirModalMejora(${JSON.stringify(r)})'>
@@ -1914,7 +1945,11 @@ function abrirModalMejoraPorId(id) {
 function abrirModalMejora(reserva) {
   mejoraPendiente = reserva;
   document.getElementById('mejora-reserva-info').innerHTML =
-    `<strong>${formatFecha(reserva.fecha)}</strong> · ${reserva.hora} · ${TIPO_NOMBRE[reserva.cod_instalacion] || '—'}`;
+    `<strong>${formatFecha(reserva.fecha)}</strong> · ${reserva.hora} · ${etiquetaSalida(reserva.cod_instalacion, null, reserva.modalidad) || '—'}`;
+
+  // La mejora mantiene la modalidad (9 o 18 hoyos) de la reserva original
+  document.getElementById('mejora-modalidad').value = String(reserva.modalidad || 7);
+  rellenarSalidas('mejora', String(reserva.cod_instalacion || '11'));
 
   // Poner franja hasta la hora actual como límite superior por defecto
   if (reserva.hora) {
@@ -1925,8 +1960,7 @@ function abrirModalMejora(reserva) {
 }
 
 function toggleMejoraPreferencia() {
-  const tipo = document.getElementById('mejora-tipo').value;
-  document.getElementById('mejora-pref-group').style.display = tipo === '11,13' ? 'block' : 'none';
+  actualizarPreferencia(document.getElementById('mejora-tipo').value, 'mejora-pref-group', 'mejora-preferencia');
 }
 
 function cerrarModalMejora(e) {
@@ -1942,10 +1976,11 @@ async function iniciarMejora() {
   if (!mejoraPendiente) return;
 
   const tipo = document.getElementById('mejora-tipo').value;
+  const modalidad = parseInt(document.getElementById('mejora-modalidad').value);
   const desde = document.getElementById('mejora-desde').value;
   const hasta = document.getElementById('mejora-hasta').value;
   const pollInterval = parseInt(document.getElementById('mejora-intervalo').value);
-  const preferencia = tipo === '11,13'
+  const preferencia = tipo.indexOf(',') >= 0
     ? parseInt(document.getElementById('mejora-preferencia').value)
     : null;
 
@@ -1962,7 +1997,7 @@ async function iniciarMejora() {
     fecha: r.fecha,
     hora_actual: r.hora,
     cod_instalacion_actual: r.cod_instalacion,
-    tipo, desde, hasta, pollInterval, preferencia,
+    tipo, modalidad, desde, hasta, pollInterval, preferencia,
     modo_hora: modo_hora_mejora,
     // Usar todos los jugadores de la reserva original, no solo el titular
     jugadores: (r.jugadores && r.jugadores.length > 0) ? r.jugadores : [state.session.jugadorId]

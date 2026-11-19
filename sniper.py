@@ -22,8 +22,12 @@ CORS(app)
 # ══════════════════════════════════════════════════════
 #  CONFIGURACIÓN
 # ══════════════════════════════════════════════════════
-API_VERSION = os.environ.get("API_VERSION", "7.1.0")  # cambiar en Render si el club actualiza la app
-BASE_URL = f"https://reservas.rshecc.es/AppWebServices.{API_VERSION}"
+# API nueva de la app del club (desde nov-2026): REST + token Bearer
+API_BASE = os.environ.get("API_BASE", "https://reservas.rshecc.es/WSAppsStartMaster.1.0.0/api")
+# API antigua: solo como plan B para mover/anular mientras no capturemos esos endpoints nuevos
+API_VERSION = os.environ.get("API_VERSION", "7.1.0")
+LEGACY_BASE = f"https://reservas.rshecc.es/AppWebServices.{API_VERSION}"
+LEGACY_AUTH = "Basic d2Vic2VydmljZTpTZWd1cmlkYWQqd2ViMTY="
 CENTRO = "24"
 PROCEDENCIA = "6"
 IDIOMA = "1"
@@ -32,10 +36,16 @@ DEPORTE_GOLF = "6"  # ID fijo del deporte golf en la API
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
 
+# Modalidades (campo "tipo" de la API): 7 = 18 hoyos, 31 = 9 hoyos
+MODALIDAD_18 = 7
+MODALIDAD_9 = 31
+# Salidas (campo "codigo"/"Instalacion"): 11 Hoyo 1 Norte, 13 Hoyo 1 Sur, 14 Hoyo 10 Sur, 15 Pares 3
+SALIDAS = {11: "Norte (hoyo 1)", 13: "Sur (hoyo 1)", 14: "Sur (hoyo 10)", 15: "Pares 3"}
+JUGADORES_EXCLUIDOS = {45474, 50550}  # nunca usar como sustitutos
+
 HEADERS = {
-    "Authorization": "Basic d2Vic2VydmljZTpTZWd1cmlkYWQqd2ViMTY=",
-    "User-Agent": "StartMasterRSHECC/1 CFNetwork/3860.400.51 Darwin/25.3.0",
-    "Accept": "*/*",
+    "User-Agent": "StartMasterRSHECC/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+    "Accept": "application/json",
     "Accept-Language": "es-ES,es;q=0.9",
     "Cache-Control": "max-age=0;no-cache;no-store",
 }
@@ -98,30 +108,9 @@ def contactos_endpoint():
     clave = body.get("clave", "")
     jugador_id = body.get("jugadorId", "")
 
+    asegurar_sesion(body)
     try:
-        # El endpoint correcto es partidoscontactos
-        # Respuesta: {"PartidosContactosResult": {"Valor": "{"Contactos":[...]}"}}
-        # Valor es un string JSON que hay que parsear por separado
-        url = f"{BASE_URL}/Jugadores/json/partidoscontactos/{CENTRO},{jugador_id},{PROCEDENCIA},{IDIOMA}"
-        print(f"[contactos] GET {url}")
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        print(f"[contactos] HTTP {r.status_code}")
-        data = r.json()
-
-        result = data.get("PartidosContactosResult", {})
-        valor_str = result.get("Valor", "")
-
-        # Valor es un string JSON — hay que parsearlo
-        valor = json.loads(valor_str) if isinstance(valor_str, str) and valor_str else {}
-        lista = valor.get("Contactos", []) or []
-
-        contactos = []
-        for j in lista:
-            cid = j.get("Codigo") or j.get("codigo")
-            nombre = j.get("Nombre") or j.get("nombre") or ""
-            if cid and nombre:
-                contactos.append({"id": cid, "nombre": nombre, "hcp": None})
-
+        contactos = get_contactos(jugador_id)
         print(f"[contactos] Total: {len(contactos)}")
         return jsonify({"ok": True, "contactos": contactos})
     except Exception as e:
@@ -139,6 +128,7 @@ def start_sniper():
             return jsonify({"ok": False, "error": f"Falta campo: {field}"})
 
     fecha = body["fecha"]
+    asegurar_sesion(body)
     poll_interval = int(body.get("pollInterval", POLL_INTERVAL_DEFAULT))
     poll_interval = max(10, min(300, poll_interval))
 
@@ -185,9 +175,12 @@ def get_status():
 def stop_sniper():
     """Detiene el sniper de una fecha o todos."""
     body = request.get_json() or {}
-    fecha = body.get("fecha")
+    fecha = body.get("fecha") or body.get("key")  # key = "mejora_{id}" para búsquedas de mejora
     with snipers_lock:
-        targets = [fecha] if fecha and fecha in snipers else list(snipers.keys())
+        if fecha:
+            targets = [fecha] if fecha in snipers else []
+        else:
+            targets = list(snipers.keys())
         for f in targets:
             snipers[f]["stop_event"].set()
             snipers[f]["status"] = "idle"
@@ -208,18 +201,24 @@ def parse_net_date(raw):
     return datetime.fromtimestamp(int(m.group(1)) / 1000, TZ_MADRID)
 
 
-def get_fechas_abiertas():
+def get_fechas_abiertas(jugador_id=None):
     """Fechas (YYYY-MM-DD) que el club ya permite reservar. None si falla la consulta."""
     try:
-        url = f"{BASE_URL}/Reservas/json/diaspermitidos/{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA}"
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        dias = r.json().get("DiasPermitidosResult", []) or []
+        r = api("GET", "Reservas/diaspermitidos", jugador_id,
+                params={"deporte": DEPORTE_GOLF, "procedencia": PROCEDENCIA}, timeout=10)
+        dias = r.json()
+        if not isinstance(dias, list):
+            print(f"[fechas] Respuesta inesperada: {str(dias)[:200]}")
+            return None
         fechas = []
-        for d in dias:
-            raw = d if isinstance(d, str) else ((d.get("fecha") or d.get("Fecha") or "") if isinstance(d, dict) else "")
-            f = parse_net_date(raw)
-            if f:
-                fechas.append(f.strftime("%Y-%m-%d"))
+        for d in dias:  # "2026-11-21T00:00:00" (o /Date()/ en la API antigua)
+            s = str(d)
+            if len(s) >= 10 and s[4] == "-":
+                fechas.append(s[:10])
+            else:
+                f = parse_net_date(s)
+                if f:
+                    fechas.append(f.strftime("%Y-%m-%d"))
         return sorted(set(fechas))
     except Exception as e:
         print(f"[fechas] Error: {e}")
@@ -287,7 +286,9 @@ def aperturas_endpoint():
 @app.route("/fechas", methods=["POST"])
 def fechas_endpoint():
     """Devuelve las fechas disponibles para reservar."""
-    fechas = get_fechas_abiertas()
+    body = request.get_json(silent=True) or {}
+    asegurar_sesion(body)
+    fechas = get_fechas_abiertas(body.get("jugadorId"))
     if fechas is None:
         return jsonify({"ok": False, "fechas": []})
     print(f"[fechas] {len(fechas)} fechas disponibles: {fechas[:5]}")
@@ -301,21 +302,9 @@ def validar_jugadores_endpoint():
     jugador_id = body.get("jugadorId")
     fecha = body.get("fecha", "")
     ids = body.get("ids", [])
-    fecha_fmt = fecha.replace("-", "")
+    asegurar_sesion(body)
 
-    ocupados = []
-    for jid in ids:
-        try:
-            url = f"{BASE_URL}/Reservas/json/validarjugador/{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA},{fecha_fmt},{jid},{IDIOMA}"
-            r = requests.get(url, headers=HEADERS, timeout=8)
-            data = r.json()
-            result = data.get("ValidarJugadorResult", {})
-            # Si tiene reserva ese día, el resultado indica que NO puede reservar
-            if not result.get("StatusOK", True) or result.get("TieneReserva") or result.get("Valor") == False:
-                ocupados.append(jid)
-        except Exception:
-            pass
-
+    ocupados = [jid for jid in ids if not jugador_puede_jugar(jugador_id, fecha, jid)]
     print(f"[validar_jugadores] fecha={fecha} ocupados={ocupados}")
     return jsonify({"ok": True, "ocupados": ocupados})
 
@@ -325,6 +314,7 @@ def reservas_endpoint():
     """Devuelve las reservas actuales del jugador."""
     body = request.get_json()
     jugador_id = body.get("jugadorId")
+    asegurar_sesion(body)
     reservas = get_reservas(jugador_id)
     # Limpiar snipers cuya reserva fue cancelada externamente
     ids_activos = {r["id"] for r in reservas if r.get("id")}
@@ -353,11 +343,12 @@ def mover_endpoint():
 
     reserva_id = body["reservaId"]
     fecha = body["fecha"]
+    asegurar_sesion(body)
     poll_interval = int(body.get("pollInterval", 60))
     poll_interval = max(10, min(300, poll_interval))
 
     # Verificar que la reserva es modificable
-    if not es_modificable(reserva_id):
+    if not es_modificable(reserva_id, body["jugadorId"]):
         return jsonify({"ok": False, "error": "Esta reserva no se puede modificar"})
 
     # Usar clave única: "mejora_{reservaId}" para no colisionar con snipers de reserva nueva
@@ -390,136 +381,234 @@ def anular_endpoint():
     clave = body.get("clave", "")
     reserva_id = body.get("reservaId", "")
 
+    asegurar_sesion(body)
+    jugador_id = body.get("jugadorId")
     try:
-        url = f"{BASE_URL}/Reservas/json/AnularReserva/{reserva_id},{PROCEDENCIA},{IDIOMA}"
-        r = requests.get(url, headers=auth_headers(usuario, clave), timeout=10)
-        data = r.json()
-
-        # La respuesta de anulación tiene AnularReservaResult
-        result = data.get("AnularReservaResult", {})
-        if result.get("StatusOK"):
-            return jsonify({"ok": True})
-        else:
-            msg = result.get("Mensaje", "No se pudo anular")
-            return jsonify({"ok": False, "error": msg})
+        res = anular_reserva(reserva_id, jugador_id)
+        return jsonify({"ok": True} if res["ok"] else {"ok": False, "error": res["error"]})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
 
 # ══════════════════════════════════════════════════════
-#  LÓGICA DE LA API DEL CLUB
+#  LÓGICA DE LA API DEL CLUB (WSAppsStartMaster 1.0.0, nov-2026)
+#  REST + JSON con token Bearer (JWT, ~1 h) que se obtiene con /Jugadores/login
 # ══════════════════════════════════════════════════════
 
-def auth_headers(usuario=None, clave=None):
-    """Headers con Basic Auth de la API del club."""
-    h = dict(HEADERS)
-    return h
+_sesiones = {}            # jugador_id(str) -> {"usuario", "clave", "token", "exp"}
+_sesiones_lock = threading.Lock()
+
+
+def _jwt_exp(token):
+    """Lee el campo exp del JWT (sin verificar firma)."""
+    try:
+        import base64
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return int(json.loads(base64.urlsafe_b64decode(payload)).get("exp", 0))
+    except Exception:
+        return 0
+
+
+def _login_raw(usuario, clave):
+    """POST /Jugadores/login. Devuelve el JSON de respuesta."""
+    body = {"Usuario": usuario, "Centro": int(CENTRO), "Procedencia": int(PROCEDENCIA),
+            "Idioma": int(IDIOMA), "Clave": clave}
+    url = f"{API_BASE}/Jugadores/login"
+    headers = {**HEADERS, "Content-Type": "application/json;charset=UTF-8"}
+    r = requests.post(url, json=body, headers=headers, timeout=15)
+    if r.status_code in (401, 403):
+        # por si el login también exige cabecera: probar con la Basic de la app antigua
+        r = requests.post(url, json=body, headers={**headers, "Authorization": LEGACY_AUTH}, timeout=15)
+    print(f"[login] HTTP {r.status_code}")
+    return r.json()
+
+
+def registrar_sesion(usuario, clave):
+    """Hace login, guarda token+credenciales y devuelve el resultado normalizado."""
+    data = _login_raw(usuario, clave)
+    if not data.get("StatusOK") or not data.get("Token"):
+        return {"ok": False, "error": data.get("Mensaje") or "Credenciales incorrectas"}
+    token = data["Token"]
+    jugador = data.get("Jugador") or {}
+    jugador_id = jugador.get("codigo")
+    exp = _jwt_exp(token) or int(time.time()) + 3000
+    with _sesiones_lock:
+        _sesiones[str(jugador_id)] = {"usuario": usuario, "clave": clave, "token": token, "exp": exp}
+    nombre = " ".join(p for p in [jugador.get("nombre", ""), jugador.get("apellido", "")] if p).strip() or usuario
+    return {"ok": True, "jugadorId": jugador_id, "nombre": nombre}
+
+
+def asegurar_sesion(body):
+    """Guarda credenciales que llegan del frontend (start/mover/anular) si aún no hay sesión."""
+    jid = str(body.get("jugadorId") or "")
+    usuario, clave = body.get("usuario"), body.get("clave")
+    if not usuario or not clave:
+        return
+    with _sesiones_lock:
+        s = _sesiones.get(jid)
+        if s and s["usuario"] == usuario and s["clave"] == clave:
+            return
+    try:
+        registrar_sesion(usuario, clave)
+    except Exception as e:
+        print(f"[sesion] Error registrando sesión: {e}")
+
+
+def get_token(jugador_id=None, forzar=False):
+    """Token válido para el jugador (renueva con las credenciales guardadas si caduca)."""
+    with _sesiones_lock:
+        if jugador_id is not None and str(jugador_id) in _sesiones:
+            s = dict(_sesiones[str(jugador_id)])
+        elif _sesiones:
+            s = dict(next(iter(_sesiones.values())))
+        else:
+            return None
+    if forzar or s["exp"] - 300 < time.time():
+        print(f"[sesion] Renovando token de {s['usuario'][-4:]}")
+        res = registrar_sesion(s["usuario"], s["clave"])
+        if not res["ok"]:
+            print(f"[sesion] No se pudo renovar: {res['error']}")
+            return None
+        with _sesiones_lock:
+            return _sesiones[str(res["jugadorId"])]["token"]
+    return s["token"]
+
+
+def api(method, path, jugador_id=None, params=None, body=None, timeout=15):
+    """Llamada autenticada a la API nueva. Reintenta una vez renovando el token si da 401."""
+    url = f"{API_BASE}/{path}"
+    for intento in range(2):
+        token = get_token(jugador_id, forzar=(intento == 1))
+        headers = dict(HEADERS)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if body is not None:
+            headers["Content-Type"] = "application/json;charset=UTF-8"
+        r = requests.request(method, url, headers=headers, params=params, json=body, timeout=timeout)
+        if r.status_code != 401:
+            return r
+        print(f"[api] 401 en {path}, renovando token")
+    return r
+
+
+def fecha_iso(fecha, hora="00:00"):
+    """'2026-11-21', '08:10' -> '2026-11-21T08:10:00'"""
+    return f"{fecha}T{hora}:00"
 
 
 def do_login(usuario, clave):
     """Login real contra la API del club."""
     try:
-        url = f"{BASE_URL}/Jugadores/json/login"
-        params = {
-            "centro": CENTRO,
-            "usuario": usuario,
-            "clave": clave,
-            "procedencia": PROCEDENCIA,
-            "idioma": IDIOMA,
-        }
-        r = requests.get(url, headers=HEADERS, params=params, timeout=10)
-        data = r.json()
-
-        print(f"[login] Respuesta: {str(data)[:2000]}")
-
-        # La API puede devolver el resultado bajo distintas claves raíz
-        result = (
-            data.get("LoginResult") or
-            data.get("loginResult") or
-            data.get("Login") or
-            data
-        )
-
-        status_ok = (
-            result.get("StatusOK") or
-            result.get("statusOK") or
-            result.get("Status") == "OK"
-        )
-
-        if status_ok:
-            jugador = result.get("Jugador") or result.get("DatosJugador") or {}
-            # La API usa 'codigo' como ID del jugador
-            jugador_id = (
-                jugador.get("codigo") or jugador.get("IDJugador") or jugador.get("Id") or
-                result.get("IDJugador") or result.get("IdJugador")
-            )
-            # Nombre completo: nombre + apellido
-            nombre_parts = [jugador.get("nombre",""), jugador.get("apellido","")]
-            nombre = " ".join(p for p in nombre_parts if p).strip() or usuario
-            print(f"[login] OK - jugadorId={jugador_id} nombre={nombre}")
-            return {"ok": True, "jugadorId": jugador_id, "nombre": nombre}
-        else:
-            msg = result.get("Mensaje") or result.get("mensaje") or "Credenciales incorrectas"
-            return {"ok": False, "error": msg}
+        res = registrar_sesion(usuario, clave)
+        if res["ok"]:
+            print(f"[login] OK - jugadorId={res['jugadorId']}")
+        return res
     except Exception as e:
         return {"ok": False, "error": f"Error de conexión: {str(e)}"}
 
 
+def get_contactos(jugador_id):
+    """Lista [{id, nombre}] de contactos del jugador."""
+    r = api("GET", "Jugadores/partidoscontactos", jugador_id,
+            params={"deporte": DEPORTE_GOLF, "idioma": IDIOMA}, timeout=10)
+    valor = r.json().get("Valor") or {}
+    if isinstance(valor, str):
+        valor = json.loads(valor) if valor else {}
+    contactos = []
+    for j in valor.get("Contactos", []) or []:
+        cid, nombre = j.get("Codigo"), j.get("Nombre") or ""
+        if cid and nombre:
+            contactos.append({"id": cid, "nombre": nombre, "hcp": None})
+    return contactos
 
-def get_instalaciones_dia_single(jugador_id, fecha_fmt, tipo_int):
-    url = f"{BASE_URL}/Reservas/json/instalacionesdia/{jugador_id},{fecha_fmt},{CENTRO},{DEPORTE_GOLF},{PROCEDENCIA},5,7,{IDIOMA},{tipo_int}"
-    print(f"[instalacionesdia] GET {url}")
-    r = requests.get(url, headers=HEADERS, timeout=15)
-    print(f"[instalacionesdia] HTTP {r.status_code}")
-    if r.status_code != 200:
-        print(f"[instalacionesdia] Error: {r.text[:200]}")
-        return []
+
+def jugador_puede_jugar(jugador_id, fecha, jid):
+    """validarjugador: StatusOK=false => ya tiene reserva ese día / no puede."""
     try:
-        data = r.json()
-        return data.get("InstalacionesDiaResult", []) or []
-    except Exception as e:
-        print(f"[instalacionesdia] Parse error: {e}")
-        return []
+        r = api("GET", "Reservas/validarjugador", jugador_id, timeout=8, params={
+            "deporte": DEPORTE_GOLF, "fecha": fecha_iso(fecha), "idioma": IDIOMA,
+            "jugador": jid, "procedencia": PROCEDENCIA})
+        return bool(r.json().get("StatusOK", True))
+    except Exception:
+        return True  # si falla, asumir disponible
 
 
-def get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo):
-    try:
-        fecha_fmt = fecha.replace("-", "") + "0000"
-        if isinstance(tipo, str) and "," in tipo:
-            tipos = [int(t) for t in tipo.split(",")]
-            todos = []
-            for t in tipos:
-                todos.extend(get_instalaciones_dia_single(jugador_id, fecha_fmt, t))
-            print(f"[instalacionesdia] Dual {tipos}: {len(todos)} huecos totales")
-            return {"InstalacionesDiaResult": todos}
+def obtener_jugadores_disponibles(jugador_id, fecha, jugadores_deseados):
+    """
+    Comprueba cada jugador deseado; si alguno no puede jugar ese día lo sustituye
+    por un contacto libre (nunca los de JUGADORES_EXCLUIDOS). El titular se mantiene.
+    """
+    disponibles, faltan = [], 0
+    for jid in jugadores_deseados:
+        if str(jid) == str(jugador_id) or jugador_puede_jugar(jugador_id, fecha, jid):
+            disponibles.append(jid)
         else:
-            tipo_int = int(tipo) if isinstance(tipo, str) else tipo
-            huecos = get_instalaciones_dia_single(jugador_id, fecha_fmt, tipo_int)
-            return {"InstalacionesDiaResult": huecos}
+            print(f"[jugadores] {jid} no disponible el {fecha}, buscando sustituto")
+            faltan += 1
+    if not faltan:
+        return jugadores_deseados
+    try:
+        contactos = get_contactos(jugador_id)
+    except Exception as e:
+        print(f"[jugadores] Error leyendo contactos: {e}")
+        contactos = []
+    for c in contactos:
+        if faltan == 0:
+            break
+        cid = c["id"]
+        if cid in JUGADORES_EXCLUIDOS or cid in jugadores_deseados or cid in disponibles:
+            continue
+        if jugador_puede_jugar(jugador_id, fecha, cid):
+            print(f"[jugadores] Sustituto: {cid} ({c['nombre']})")
+            disponibles.append(cid)
+            faltan -= 1
+    if faltan:
+        print(f"[jugadores] Solo {len(disponibles)}/{len(jugadores_deseados)} jugadores disponibles")
+    return disponibles or [jugadores_deseados[0]]
+
+
+def get_instalaciones_dia(usuario, clave, jugador_id, fecha, modalidad=MODALIDAD_18, num_jugadores=1):
+    """
+    Huecos libres del día para una modalidad (7 = 18 hoyos, 31 = 9 hoyos).
+    Una sola llamada devuelve todas las salidas (11 Norte h1, 13 Sur h1, 14 Sur h10, 15 Pares 3).
+    """
+    try:
+        r = api("GET", "Reservas/instalacionesdia", jugador_id, params={
+            "bloques": 5, "deporte": DEPORTE_GOLF, "fecha": fecha_iso(fecha), "idioma": IDIOMA,
+            "numjugadores": max(1, int(num_jugadores)), "procedencia": PROCEDENCIA, "tipo": modalidad})
+        print(f"[instalacionesdia] {fecha} modalidad={modalidad} HTTP {r.status_code}")
+        if r.status_code != 200:
+            print(f"[instalacionesdia] Error: {r.text[:200]}")
+            return None
+        data = r.json()
+        if not isinstance(data, list):
+            print(f"[instalacionesdia] Respuesta inesperada: {str(data)[:200]}")
+            return None
+        return {"InstalacionesDiaResult": data}
     except Exception as e:
         print(f"[instalacionesdia] Error: {e}")
         return None
 
-def get_tiempos(fecha, tipo):
-    """Obtiene los tiempos (slots horarios) disponibles."""
-    try:
-        fecha_fmt = fecha.replace("-", "")
-        url = f"{BASE_URL}/Reservas/json/tiempos/{fecha_fmt},{CENTRO},{tipo},{PROCEDENCIA},0"
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        return r.json()
-    except Exception as e:
-        print(f"[tiempos] Error: {e}")
-        return None
-
 
 def fecha_str(fecha, hora):
-    """Construye FechaStr: YYYYMMDDHHММ"""
+    """Construye FechaStr: YYYYMMDDHHMM"""
     return fecha.replace("-", "") + hora.replace(":", "")
 
 
-def build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores, desmarcar_cobro=False, cod_jugador_paga=0, tipo_cobro=0, pago=None):
-    """Construye el objeto reserva común a CrearReserva y PagarReserva."""
-    componentes = [{"Codigo": jid} for jid in jugadores]
+def pago_a_cuenta(jugador_id):
+    return [{
+        "Centro": int(CENTRO), "Idioma": int(IDIOMA), "Procedencia": int(PROCEDENCIA),
+        "TransaccionTpv": {}, "Tipo": 8, "LineaTicket": 0, "Jugador": int(jugador_id),
+        "Importe": 0, "ASaldo": 0,
+        "FormaPago": {"EsTarjeta": False, "EsAbonoAutorizado": False, "Codigo": -2,  # A CUENTA
+                      "EsMonedero": False, "EsAbono": False, "EsDeuda": False},
+    }]
+
+
+def build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores, modalidad=MODALIDAD_18,
+                       desmarcar_cobro=False, cod_jugador_paga=0, tipo_cobro=0, pago=None, codigo=0):
+    """Objeto reserva común a crearreserva y pagarreserva (formato de la captura nov-2026)."""
     return {
         "Centro": int(CENTRO),
         "DesmarcarCobro": desmarcar_cobro,
@@ -527,195 +616,217 @@ def build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores, desm
         "Deporte": int(DEPORTE_GOLF),
         "JugadorFamiliar": 0,
         "CodJugadorProcesar": 0,
-        "CodJugadorPaga": cod_jugador_paga,
+        "CodJugadorPaga": int(cod_jugador_paga),
         "TipoCobro": tipo_cobro,
-        "Codigo": 0,
+        "Codigo": int(codigo),
         "FechaStr": fecha_str(fecha, hora),
         "Instalacion": int(cod_instalacion),
         "Idioma": int(IDIOMA),
         "Pago": pago or [],
-        "Componentes": componentes,
+        "Componentes": [{"Codigo": int(j)} for j in jugadores],
         "BuscarJugadores": False,
-        "Tipo": 7,
+        "Tipo": int(modalidad),
         "TiempoJuego": 5,
         "Procedencia": int(PROCEDENCIA),
     }
 
 
-def crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores):
-    """
-    Crea una reserva (PUT /Reservas/json/CrearReserva).
-    Payload exacto extraído de captura Charles.
-    """
+def _resultado(r, etiqueta, defecto):
+    print(f"[{etiqueta}] HTTP {r.status_code} - {r.text[:300]}")
     try:
-        payload = {"reserva": build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores)}
-        url = f"{BASE_URL}/Reservas/json/CrearReserva"
-        print(f"[crear_reserva] PUT {url} payload={payload}")
-        r = requests.put(url, headers={**HEADERS, "Content-Type": "application/json"},
-                         json=payload, timeout=15)
-        print(f"[crear_reserva] HTTP {r.status_code} - {r.text[:300]}")
         data = r.json()
-        result = data.get("CrearReservaResult", {})
-        if result.get("StatusOK"):
-            reserva_id = result.get("Valor")  # Valor contiene el ID numérico
-            print(f"[crear_reserva] ✅ Reserva creada ID={reserva_id} - {result.get('Mensaje','')}")
-            return {"ok": True, "reservaId": reserva_id}
-        else:
-            msg = result.get("Mensaje") or "Error creando reserva"
-            print(f"[crear_reserva] ❌ {msg}")
-            return {"ok": False, "error": msg}
+    except Exception:
+        return {"ok": False, "error": f"HTTP {r.status_code}"}
+    if isinstance(data, dict) and data.get("StatusOK"):
+        return {"ok": True, "data": data}
+    msg = (data.get("Mensaje") if isinstance(data, dict) else None) or defecto
+    return {"ok": False, "error": msg}
+
+
+def crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores, modalidad=MODALIDAD_18):
+    """POST /Reservas/crearreserva -> Valor = id de la reserva (queda sin pagar hasta pagarreserva)."""
+    try:
+        payload = build_reserva_base(jugador_id, fecha, hora, cod_instalacion, jugadores, modalidad)
+        print(f"[crear_reserva] {payload['FechaStr']} inst={cod_instalacion} tipo={modalidad} jugadores={jugadores}")
+        res = _resultado(api("POST", "Reservas/crearreserva", jugador_id, body=payload), "crear_reserva",
+                         "Error creando reserva")
+        if res["ok"]:
+            return {"ok": True, "reservaId": res["data"].get("Valor")}
+        return res
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"ok": False, "error": str(e)}
 
 
 def crear_ticket(reserva_id, jugador_id):
-    """Crea el ticket de pago para la reserva."""
+    """POST /Reservas/crearticket?codpeticion=..."""
     try:
-        # Parámetros de la captura: 881017,0,33894,1,6,1
-        # reservaId, ?, jugadorId, ?, procedencia, idioma
-        url = f"{BASE_URL}/Reservas/json/crearticket/{reserva_id},0,{jugador_id},{IDIOMA},{PROCEDENCIA},{IDIOMA}"
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        data = r.json()
-        result = data.get("CrearTicketResult", {})
-        if result.get("StatusOK"):
-            return {"ok": True, "ticket": result}
-        else:
-            return {"ok": False, "error": result.get("Mensaje", "Error creando ticket")}
+        r = api("POST", "Reservas/crearticket", jugador_id, params={
+            "codpeticion": reserva_id, "idioma": IDIOMA, "jugador": jugador_id,
+            "procedencia": PROCEDENCIA, "tipocobro": 1, "tiposolicitud": 0})
+        res = _resultado(r, "crear_ticket", "Error creando ticket")
+        return {"ok": True, "ticket": res["data"]} if res["ok"] else res
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-def es_modificable(reserva_id):
-    """Verifica si una reserva puede modificarse."""
+def pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_data, modalidad=MODALIDAD_18):
+    """POST /Reservas/pagarreserva — FormaPago -2 = A CUENTA (domiciliación)."""
     try:
-        url = f"{BASE_URL}/Reservas/json/esmodificable/{reserva_id},{PROCEDENCIA}"
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        data = r.json()
-        return data.get("EsModificableResult", False)
-    except Exception as e:
-        print(f"[esmodificable] Error: {e}")
-        return False
-
-
-def mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores):
-    """
-    Mueve una reserva existente a un nuevo horario/campo.
-    PUT /Reservas/json/moverreserva — mismo payload que CrearReserva pero con Codigo=reservaId.
-    """
-    try:
-        reserva = build_reserva_base(jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores)
-        reserva["Codigo"] = reserva_id  # ID de la reserva a mover
-        payload = {"reserva": reserva}
-
-        url = f"{BASE_URL}/Reservas/json/moverreserva"
-        print(f"[moverreserva] PUT {url} - reservaId={reserva_id} nueva_hora={hora_nueva} instalacion={cod_instalacion_nueva}")
-        r = requests.put(url, headers={**HEADERS, "Content-Type": "application/json"},
-                         json=payload, timeout=15)
-        print(f"[moverreserva] HTTP {r.status_code} - {r.text[:300]}")
-        data = r.json()
-        result = data.get("MoverReservaResult", {})
-        if result.get("StatusOK"):
-            print(f"[moverreserva] ✅ {result.get('Mensaje','')}")
-            return {"ok": True}
-        else:
-            msg = result.get("Mensaje") or "Error moviendo reserva"
-            print(f"[moverreserva] ❌ {msg}")
-            return {"ok": False, "error": msg}
+        payload = build_reserva_base(
+            jugador_id, fecha, hora, cod_instalacion, jugadores, modalidad,
+            desmarcar_cobro=True, cod_jugador_paga=jugador_id,
+            tipo_cobro=(ticket_data or {}).get("TipoCobro", 1),
+            pago=pago_a_cuenta(jugador_id), codigo=reserva_id)
+        res = _resultado(api("POST", "Reservas/pagarreserva", jugador_id, body=payload), "pagar_reserva",
+                         "Error en el pago")
+        return {"ok": True} if res["ok"] else res
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"ok": False, "error": str(e)}
 
 
-def marcar_cambio_pagado(reserva_id):
-    """Marca el cambio como pagado tras PagarReserva."""
+def borrar_reserva_no_pagada(reserva_id, jugador_id):
+    """DELETE /Reservas/borrarreservanopago — limpia una reserva creada que no se llegó a pagar."""
     try:
-        url = f"{BASE_URL}/Reservas/json/marcarcambiopagado/{reserva_id},{PROCEDENCIA},{IDIOMA}"
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        data = r.json()
-        return data.get("MarcarCambioPagadoResult", {}).get("StatusOK", False)
+        r = api("DELETE", "Reservas/borrarreservanopago", jugador_id,
+                params={"codigo": reserva_id, "idioma": IDIOMA}, timeout=10)
+        return _resultado(r, "borrar_no_pagada", "No se pudo borrar")["ok"]
     except Exception as e:
-        print(f"[marcarcambiopagado] Error: {e}")
+        print(f"[borrar_no_pagada] Error: {e}")
         return False
 
 
-def get_reservas(jugador_id):
-    """
-    Devuelve las reservas futuras activas del jugador consultando la API del club en tiempo real.
-    Siempre fresco — si el socio cancela desde la app del club, desaparece aquí también.
-    """
-    import re, datetime as dt
+def es_modificable(reserva_id, jugador_id=None):
     try:
-        url = f"{BASE_URL}/Jugadores/json/reservasall/{CENTRO},{jugador_id},{PROCEDENCIA}"
-        print(f"[reservasall] GET {url}")
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = api("GET", "Reservas/esmodificable", jugador_id,
+                params={"codigo": reserva_id, "procedencia": PROCEDENCIA}, timeout=10)
+        return r.json() is True
+    except Exception as e:
+        print(f"[esmodificable] Error: {e}")
+        return False
+
+
+def es_anulable(reserva_id, jugador_id=None):
+    try:
+        r = api("GET", "Reservas/esanulable", jugador_id,
+                params={"codigo": reserva_id, "procedencia": PROCEDENCIA, "tipo": 1}, timeout=10)
+        return r.json() is True
+    except Exception as e:
+        print(f"[esanulable] Error: {e}")
+        return False
+
+
+def _legacy(method, path, body=None):
+    """Llamada a la API antigua (AppWebServices) — solo como plan B para mover/anular."""
+    url = f"{LEGACY_BASE}/{path}"
+    h = {**HEADERS, "Authorization": LEGACY_AUTH}
+    if body is not None:
+        h["Content-Type"] = "application/json"
+    return requests.request(method, url, headers=h, json=body, timeout=15)
+
+
+def _primer_ok(intentos, etiqueta, defecto):
+    """Prueba varias llamadas candidatas (endpoints no capturados aún) hasta que una responda OK."""
+    ultimo = {"ok": False, "error": defecto}
+    for desc, fn in intentos:
+        try:
+            r = fn()
+            if r.status_code == 404:
+                print(f"[{etiqueta}] {desc}: 404")
+                continue
+            res = _resultado(r, f"{etiqueta}:{desc}", defecto)
+            if res["ok"]:
+                return res
+            ultimo = res
+        except Exception as e:
+            print(f"[{etiqueta}] {desc}: {e}")
+    return ultimo
+
+
+def mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores, modalidad=MODALIDAD_18):
+    """
+    Mueve una reserva a otro horario/salida.
+    OJO: el endpoint de la API nueva no está capturado todavía; se prueba el nombre esperado
+    y, si no existe, la API antigua.
+    """
+    reserva = build_reserva_base(jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores, modalidad,
+                                 codigo=reserva_id)
+    res = _primer_ok([
+        ("nueva PUT", lambda: api("PUT", "Reservas/moverreserva", jugador_id, body=reserva)),
+        ("nueva POST", lambda: api("POST", "Reservas/moverreserva", jugador_id, body=reserva)),
+        ("antigua", lambda: _legacy("PUT", "Reservas/json/moverreserva", {"reserva": reserva})),
+    ], "moverreserva", "Error moviendo reserva")
+    # La API antigua envuelve la respuesta en MoverReservaResult
+    if res["ok"] and "MoverReservaResult" in res["data"]:
+        inner = res["data"]["MoverReservaResult"]
+        if not inner.get("StatusOK"):
+            return {"ok": False, "error": inner.get("Mensaje") or "Error moviendo reserva"}
+    return {"ok": True} if res["ok"] else res
+
+
+def marcar_cambio_pagado(reserva_id, jugador_id=None):
+    res = _primer_ok([
+        ("nueva", lambda: api("GET", "Reservas/marcarcambiopagado", jugador_id,
+                              params={"codigo": reserva_id, "procedencia": PROCEDENCIA, "idioma": IDIOMA})),
+        ("antigua", lambda: _legacy("GET", f"Reservas/json/marcarcambiopagado/{reserva_id},{PROCEDENCIA},{IDIOMA}")),
+    ], "marcarcambiopagado", "No se pudo marcar")
+    return res["ok"]
+
+
+def anular_reserva(reserva_id, jugador_id=None):
+    """
+    Anula una reserva ya pagada. El endpoint nuevo no está capturado todavía: se prueban
+    los nombres esperados y, por último, la API antigua.
+    """
+    q = {"codigo": reserva_id, "idioma": IDIOMA, "procedencia": PROCEDENCIA}
+    res = _primer_ok([
+        ("DELETE anularreserva", lambda: api("DELETE", "Reservas/anularreserva", jugador_id, params=q)),
+        ("POST anularreserva", lambda: api("POST", "Reservas/anularreserva", jugador_id, params=q)),
+        ("PUT anularreserva", lambda: api("PUT", "Reservas/anularreserva", jugador_id, params=q)),
+        ("antigua", lambda: _legacy("GET", f"Reservas/json/AnularReserva/{reserva_id},{PROCEDENCIA},{IDIOMA}")),
+    ], "anular", "No se pudo anular")
+    if res["ok"] and "AnularReservaResult" in res["data"]:
+        inner = res["data"]["AnularReservaResult"]
+        if not inner.get("StatusOK"):
+            return {"ok": False, "error": inner.get("Mensaje") or "No se pudo anular"}
+    return {"ok": True} if res["ok"] else res
+
+
+def get_reservas(jugador_id):
+    """Reservas futuras del jugador (GET /Jugadores/reservasall)."""
+    try:
+        r = api("GET", "Jugadores/reservasall", jugador_id,
+                params={"idioma": IDIOMA, "jugador": jugador_id, "procedencia": PROCEDENCIA}, timeout=10)
         print(f"[reservasall] HTTP {r.status_code}")
-        print(f"[reservasall] Raw: {r.text[:800]}")
         data = r.json()
-        print(f"[reservasall] Keys: {list(data.keys())}")
-
-        # La clave puede variar — buscarla
-        reservas_raw = data.get("ReservasAllResult") or data.get("Reservas") or []
-        if isinstance(reservas_raw, dict):
-            # A veces viene envuelto
-            for v in reservas_raw.values():
-                if isinstance(v, list):
-                    reservas_raw = v
-                    break
-
-        print(f"[reservasall] {len(reservas_raw)} reservas encontradas")
-        if reservas_raw:
-            print(f"[reservasall] Ejemplo: {str(reservas_raw[0])[:300]}")
-
-        ahora = dt.datetime.now()
+        if not isinstance(data, list):
+            print(f"[reservasall] Respuesta inesperada: {str(data)[:300]}")
+            return []
+        hoy = ahora_madrid().strftime("%Y-%m-%d")
         resultado = []
-
-        for res in reservas_raw:
+        for res in data:
             if not isinstance(res, dict):
                 continue
-
-            # Fecha/hora — puede estar en distintos campos
-            hora_raw = (
-                res.get("fecha_hora_uso") or res.get("fecha_hora") or
-                res.get("FechaHora") or res.get("Fecha") or ""
-            )
-            hora_str = unix_date_to_hhmm(hora_raw) if hora_raw else ""
-
-            # Extraer fecha
-            fecha_str_val = ""
-            m = re.search(r"/Date\((\d+)", hora_raw)
-            if m:
-                ts = int(m.group(1)) // 1000
-                fecha_dt = dt.datetime.utcfromtimestamp(ts) + dt.timedelta(hours=2)
-                fecha_str_val = fecha_dt.strftime("%Y-%m-%d")
-                # Solo reservas futuras (a partir de hoy)
-                if fecha_dt.date() < ahora.date():
-                    continue
-
-            # Instalación — viene como objeto anidado
-            inst_obj = res.get("instalacion")
-            if isinstance(inst_obj, dict):
-                cod_inst = inst_obj.get("codigo")
-                descs = inst_obj.get("descripciones") or []
-                descripcion = descs[0].get("Value", "").strip() if descs else ""
-            else:
-                cod_inst = res.get("cod_instalacion") or res.get("CodInstalacion")
-                descripcion = res.get("descripcion") or res.get("Descripcion") or ""
-
-            # Jugadores
-            jugadores_raw = res.get("jugadores") or res.get("Jugadores") or []
-            jugadores_ids = [j.get("codigo") or j.get("Codigo") for j in jugadores_raw if isinstance(j, dict)]
-
+            fecha_raw = res.get("Fecha") or ""          # "2026-11-21T08:10:00"
+            fecha_val, hora_val = fecha_raw[:10], fecha_raw[11:16]
+            if not fecha_val and res.get("FechaStr"):
+                fs = res["FechaStr"]
+                fecha_val, hora_val = f"{fs[:4]}-{fs[4:6]}-{fs[6:8]}", f"{fs[8:10]}:{fs[10:12]}"
+            if fecha_val and fecha_val < hoy:
+                continue
             resultado.append({
-                "id": res.get("codigo") or res.get("Codigo") or res.get("IDReserva"),
-                "fecha": fecha_str_val,
-                "hora": hora_str,
-                "cod_instalacion": cod_inst,
-                "descripcion": descripcion,
-                "jugadores": jugadores_ids,
+                "id": res.get("Codigo"),
+                "fecha": fecha_val,
+                "hora": hora_val,
+                "cod_instalacion": res.get("Instalacion"),
+                "descripcion": (res.get("DescInstalacion") or "").strip(),
+                "modalidad": res.get("Tipo") or MODALIDAD_18,
+                "tarifa": res.get("TipoTarifa") or "",
+                "jugadores": [c.get("Codigo") for c in res.get("Componentes") or [] if isinstance(c, dict)],
+                "nombres": [c.get("Nombre") for c in res.get("Componentes") or [] if isinstance(c, dict)],
+                "localizador": res.get("Localizador"),
             })
-
-        # Ordenar por fecha+hora
         resultado.sort(key=lambda x: (x["fecha"], x["hora"]))
         print(f"[reservasall] {len(resultado)} reservas futuras")
         return resultado
@@ -725,60 +836,12 @@ def get_reservas(jugador_id):
         return []
 
 
-def pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_data):
-    """
-    Confirma y paga la reserva (PUT /Reservas/json/PagarReserva).
-    Payload exacto extraído de captura Charles.
-    FormaPago -2 = A CUENTA (domiciliación bancaria, sin coste inmediato).
-    """
-    try:
-        pago = [{
-            "Centro": int(CENTRO),
-            "Idioma": int(IDIOMA),
-            "Procedencia": int(PROCEDENCIA),
-            "TransaccionTpv": {},
-            "Tipo": 8,
-            "LineaTicket": 0,
-            "Jugador": jugador_id,
-            "Importe": 0,
-            "ASaldo": 0,
-            "FormaPago": {
-                "EsTarjeta": False,
-                "EsAbonoAutorizado": False,
-                "Codigo": -2,       # A CUENTA = domiciliación
-                "EsMonedero": False,
-                "EsAbono": False,
-                "EsDeuda": False,
-            }
-        }]
-
-        reserva = build_reserva_base(
-            jugador_id, fecha, hora, cod_instalacion, jugadores,
-            desmarcar_cobro=True,
-            cod_jugador_paga=jugador_id,
-            tipo_cobro=ticket_data.get("TipoCobro", 1),
-            pago=pago,
-        )
-        reserva["Codigo"] = reserva_id  # ID de la reserva creada
-
-        payload = {"reserva": reserva}
-        url = f"{BASE_URL}/Reservas/json/PagarReserva"
-        print(f"[pagar_reserva] PUT {url}")
-        r = requests.put(url, headers={**HEADERS, "Content-Type": "application/json"},
-                         json=payload, timeout=15)
-        print(f"[pagar_reserva] HTTP {r.status_code} - {r.text[:300]}")
-        data = r.json()
-        result = data.get("PagarReservaResult", {})
-        if result.get("StatusOK"):
-            print(f"[pagar_reserva] ✅ {result.get('Mensaje','')}")
-            return {"ok": True}
-        else:
-            msg = result.get("Mensaje") or "Error en el pago"
-            print(f"[pagar_reserva] ❌ {msg}")
-            return {"ok": False, "error": msg}
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return {"ok": False, "error": str(e)}
+def hora_hhmm(raw):
+    """'2026-11-21T08:10:00' -> '08:10'; también acepta el formato antiguo /Date(ms+0100)/."""
+    s = str(raw or "")
+    if "T" in s and len(s) >= 16:
+        return s[11:16]
+    return unix_date_to_hhmm(s)
 
 
 def unix_date_to_hhmm(date_str):
@@ -828,7 +891,7 @@ def parsear_huecos(instalaciones_data, desde, hasta):
             if not hora_raw:
                 continue
 
-            hora_str = unix_date_to_hhmm(hora_raw)
+            hora_str = hora_hhmm(hora_raw)
             if not hora_str:
                 continue
 
@@ -915,17 +978,17 @@ def seleccionar_hueco(huecos_pref, huecos_alt, franja, modo_hora):
         print(f"[seleccionar] Preferido en zona: {elegido['hora']} ({elegido['descripcion'].strip()})")
         return elegido
 
-    # 2. Alternativo en zona
+    # 2. Preferido en toda la franja (la salida preferida tiene prioridad absoluta)
+    if huecos_pref:
+        elegido = min(huecos_pref, key=score)
+        print(f"[seleccionar] Preferido fuera de zona: {elegido['hora']}")
+        return elegido
+
+    # 3. Alternativo en zona
     candidatos = [h for h in huecos_alt if en_zona(h)]
     if candidatos:
         elegido = min(candidatos, key=score)
         print(f"[seleccionar] Alternativo en zona: {elegido['hora']} ({elegido['descripcion'].strip()})")
-        return elegido
-
-    # 3. Preferido en toda la franja
-    if huecos_pref:
-        elegido = min(huecos_pref, key=score)
-        print(f"[seleccionar] Preferido fuera de zona: {elegido['hora']}")
         return elegido
 
     # 4. Alternativo en toda la franja
@@ -937,51 +1000,60 @@ def seleccionar_hueco(huecos_pref, huecos_alt, franja, modo_hora):
     return None
 
 
+def parse_salidas(tipo):
+    """'11' -> [11]; '11,13' -> [11, 13]; 11 -> [11]"""
+    if isinstance(tipo, (list, tuple)):
+        return [int(t) for t in tipo]
+    return [int(t) for t in str(tipo).split(",") if str(t).strip()]
+
+
+def normalizar_modalidad(params):
+    """
+    Modalidad (7 = 18 hoyos, 31 = 9 hoyos) y salidas pedidas.
+    Compatibilidad: el tipo antiguo 12 ('Norte 9 hoyos') pasa a 9 hoyos por el Norte.
+    """
+    salidas = parse_salidas(params.get("tipo"))
+    modalidad = int(params.get("modalidad") or MODALIDAD_18)
+    if salidas == [12]:
+        salidas, modalidad = [11], MODALIDAD_9
+    if modalidad == MODALIDAD_9:
+        salidas = [s for s in salidas if s == 11] or [11]  # 9 hoyos: solo hoyo 1 del Norte
+    return modalidad, salidas
+
+
+def nombre_salida(cod, modalidad=MODALIDAD_18):
+    hoyos = "9h" if int(modalidad or MODALIDAD_18) == MODALIDAD_9 else "18h"
+    try:
+        return f"{SALIDAS.get(int(cod), str(cod))} · {hoyos}"
+    except (TypeError, ValueError):
+        return str(cod)
+
+
 def filtrar_por_instalacion(huecos, tipo, preferencia=None, modo_hora=None, desde=None, hasta=None):
     """
-    Filtra huecos y selecciona el mejor según campo preferido y modo horario.
-    Devuelve lista con UN solo hueco (el seleccionado) o lista ordenada si no hay modo_hora.
+    Filtra los huecos a las salidas pedidas y elige el mejor.
+    - Una salida: el mejor según modo_hora.
+    - Varias ('11,13', '11,13,14'): la preferida tiene prioridad absoluta; el resto es alternativa.
+    Devuelve [hueco] (o la lista ordenada si no hay modo_hora).
     """
-    # Modo simple: tipo es int o string sin coma
-    if not (isinstance(tipo, str) and "," in tipo):
-        tipo_int = int(tipo) if isinstance(tipo, str) else tipo
-        filtrados = [h for h in huecos if h["cod_instalacion"] == tipo_int]
-        if not filtrados:
-            print(f"[filtrar] Sin huecos para instalación {tipo_int}")
-            return []
-        if modo_hora and desde and hasta:
-            franja = (time_to_minutes(desde), time_to_minutes(hasta))
-            elegido = seleccionar_hueco(filtrados, [], franja, modo_hora)
-            return [elegido] if elegido else filtrados
-        print(f"[filtrar] {len(filtrados)} huecos para instalación {tipo_int}")
-        return filtrados
-
-    # Modo dual: tipo es "11,13"
-    tipos = [int(t) for t in tipo.split(",")]
+    salidas = parse_salidas(tipo)
     try:
-        pref_int = int(preferencia) if preferencia is not None else None
+        pref_int = int(preferencia) if preferencia not in (None, "") else None
     except (ValueError, TypeError):
         pref_int = None
-    preferido = pref_int if pref_int in tipos else tipos[0]
-    no_preferido = [t for t in tipos if t != preferido][0]
+    preferido = pref_int if pref_int in salidas else salidas[0]
+    alternativas = [s for s in salidas if s != preferido]
 
     huecos_pref = [h for h in huecos if h["cod_instalacion"] == preferido]
-    huecos_nopref = [h for h in huecos if h["cod_instalacion"] == no_preferido]
-
-    print(f"[filtrar] Dual: preferido={preferido}({len(huecos_pref)}) alt={no_preferido}({len(huecos_nopref)}) modo={modo_hora}")
+    huecos_alt = sorted([h for h in huecos if h["cod_instalacion"] in alternativas],
+                        key=lambda h: (h["hora"], alternativas.index(h["cod_instalacion"])))
+    print(f"[filtrar] preferido={preferido}({len(huecos_pref)}) alt={alternativas}({len(huecos_alt)}) modo={modo_hora}")
 
     if modo_hora and desde and hasta:
         franja = (time_to_minutes(desde), time_to_minutes(hasta))
-        elegido = seleccionar_hueco(huecos_pref, huecos_nopref, franja, modo_hora)
+        elegido = seleccionar_hueco(huecos_pref, huecos_alt, franja, modo_hora)
         return [elegido] if elegido else []
-
-    # Sin modo_hora: preferido primero, alternativo si no hay
-    if huecos_pref:
-        return huecos_pref
-    if huecos_nopref:
-        print(f"[filtrar] Sin preferido, usando alternativo {no_preferido}")
-        return huecos_nopref
-    return []
+    return huecos_pref or huecos_alt
 
 
 def time_to_minutes(t):
@@ -1035,7 +1107,8 @@ def sniper_loop(fecha, params):
         stop_event = snipers[fecha]["stop_event"]
         poll_interval = snipers[fecha]["poll_interval"]
 
-    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3", "11,13": "Norte o Sur 18h"}
+    modalidad, salidas = normalizar_modalidad(params)
+    tipo = ",".join(str(s) for s in salidas)
     print(f"[Sniper:{fecha}] Iniciando. Tipo:{tipo} {desde}-{hasta} Jugadores:{jugadores} Intervalo:{poll_interval}s")
 
     # ── Fase de espera: el día puede no estar abierto todavía ──
@@ -1048,7 +1121,7 @@ def sniper_loop(fecha, params):
             set_state(mensaje=f"Programada: verificará apertura desde el {DIAS[inicio.weekday()]} {inicio:%d/%m} a las {inicio:%H:%M}")
             stop_event.wait(min((inicio - ahora).total_seconds(), 300))
             continue
-        abiertas = get_fechas_abiertas()
+        abiertas = get_fechas_abiertas(jugador_id)
         if abiertas is None or fecha in abiertas:
             if abiertas is not None:
                 print(f"[Sniper:{fecha}] Día abierto para reservas")
@@ -1072,7 +1145,7 @@ def sniper_loop(fecha, params):
         print(f"[Sniper:{fecha}] Intento #{intento}")
         set_state(mensaje=f"Buscando huecos en {desde}–{hasta}… (cada {poll_interval}s)")
 
-        instalaciones = get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo)
+        instalaciones = get_instalaciones_dia(usuario, clave, jugador_id, fecha, modalidad, len(jugadores))
         if instalaciones is None:
             set_state(mensaje="Error consultando disponibilidad")
             stop_event.wait(poll_interval)
@@ -1098,7 +1171,7 @@ def sniper_loop(fecha, params):
         if jugadores_finales != jugadores:
             set_state(mensaje=f"¡Hueco a las {hora}! Ajustando jugadores no disponibles…")
 
-        res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores_finales)
+        res_crear = crear_reserva(usuario, clave, jugador_id, fecha, hora, cod_instalacion, jugadores_finales, modalidad)
         if not res_crear["ok"]:
             print(f"[Sniper:{fecha}] Error reserva: {res_crear['error']}")
             set_state(status="searching", mensaje=f"Error: {res_crear['error']}. Reintentando…")
@@ -1107,14 +1180,15 @@ def sniper_loop(fecha, params):
 
         reserva_id = res_crear["reservaId"]
         ticket_res = crear_ticket(reserva_id, jugador_id)
-        if not ticket_res["ok"]:
-            set_state(status="searching")
-            stop_event.wait(5)
-            continue
-
-        pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores, ticket_res["ticket"])
+        pago_res = {"ok": False, "error": ticket_res.get("error")}
+        if ticket_res["ok"]:
+            pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora, cod_instalacion, jugadores_finales,
+                                     ticket_res["ticket"], modalidad)
         if not pago_res["ok"]:
-            set_state(status="searching")
+            # No dejar la reserva colgada sin pagar: borrarla y volver a intentarlo
+            print(f"[Sniper:{fecha}] Pago fallido ({pago_res.get('error')}), borrando reserva #{reserva_id}")
+            borrar_reserva_no_pagada(reserva_id, jugador_id)
+            set_state(status="searching", mensaje=f"Error en el pago: {pago_res.get('error')}. Reintentando…")
             stop_event.wait(5)
             continue
 
@@ -1122,15 +1196,16 @@ def sniper_loop(fecha, params):
         set_state(
             status="reserved",
             mensaje="¡Reserva confirmada!",
-            reserva={"id": reserva_id, "fecha": fecha_fmt, "hora": hora, "tipo": tipo, "jugadores": jugadores},
+            reserva={"id": reserva_id, "fecha": fecha_fmt, "hora": hora, "tipo": cod_instalacion,
+                     "modalidad": modalidad, "jugadores": jugadores_finales},
         )
-        print(f"[Sniper:{fecha}] ✅ CONFIRMADA: {fecha_fmt} {hora} {tipo_nombre.get(tipo, tipo)}")
+        print(f"[Sniper:{fecha}] ✅ CONFIRMADA: {fecha_fmt} {hora} {nombre_salida(cod_instalacion, modalidad)}")
         send_telegram(
             f"⛳ <b>¡Reserva confirmada!</b>\n\n"
             f"📅 <b>Fecha:</b> {fecha_fmt}\n"
             f"🕐 <b>Hora:</b> {hora}\n"
-            f"🏌️ <b>Campo:</b> {hueco.get('descripcion','').strip() or tipo_nombre.get(cod_instalacion, str(cod_instalacion))}\n"
-            f"👥 <b>Jugadores:</b> {len(jugadores)}\n"
+            f"🏌️ <b>Salida:</b> {nombre_salida(cod_instalacion, modalidad)}\n"
+            f"👥 <b>Jugadores:</b> {len(jugadores_finales)}\n"
             f"🔖 <b>Ref:</b> #{reserva_id}"
         )
         break
@@ -1170,7 +1245,8 @@ def mejora_loop(key, params):
         stop_event = snipers[key]["stop_event"]
         poll_interval = snipers[key]["poll_interval"]
 
-    tipo_nombre = {11: "Norte 18h", 12: "Norte 9h", 13: "Sur 18h", 14: "Sur 9h", 15: "Pares 3", "11,13": "Norte o Sur 18h"}
+    modalidad, salidas = normalizar_modalidad(params)
+    tipo = ",".join(str(s) for s in salidas)
     print(f"[Mejora:{reserva_id}] Iniciando. Actual:{hora_actual} Buscando:{desde}-{hasta} tipo:{tipo} modo={modo_hora}")
 
     while not stop_event.is_set():
@@ -1182,12 +1258,13 @@ def mejora_loop(key, params):
         print(f"[Mejora:{reserva_id}] Intento #{intento}")
         set_state(mensaje=f"Buscando mejora sobre {hora_actual}… (cada {poll_interval}s)")
 
-        instalaciones = get_instalaciones_dia(usuario, clave, jugador_id, fecha, tipo)
+        instalaciones = get_instalaciones_dia(usuario, clave, jugador_id, fecha, modalidad, len(jugadores))
         if instalaciones is None:
             stop_event.wait(poll_interval)
             continue
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
+        huecos = [h for h in huecos if h["cod_instalacion"] in salidas]
         # Un hueco es "mejor" si:
         # 1. Es más temprano que la hora actual, O
         # 2. Es la misma hora pero en el campo preferido (y el actual no lo es)
@@ -1228,12 +1305,12 @@ def mejora_loop(key, params):
         print(f"[Mejora:{reserva_id}] Mejora encontrada: {hora_nueva} ({cod_inst_nueva}). Moviendo...")
 
         # Verificar que sigue siendo modificable
-        if not es_modificable(reserva_id):
+        if not es_modificable(reserva_id, jugador_id):
             set_state(status="error", error="La reserva ya no es modificable")
             break
 
         # Mover reserva
-        res_mover = mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores)
+        res_mover = mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores, modalidad)
         if not res_mover["ok"]:
             set_state(status="searching", mensaje=f"Error moviendo: {res_mover['error']}. Reintentando…")
             stop_event.wait(5)
@@ -1247,14 +1324,15 @@ def mejora_loop(key, params):
             continue
 
         # Pagar el cambio
-        pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores, ticket_res["ticket"])
+        pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores,
+                                 ticket_res["ticket"], modalidad)
         if not pago_res["ok"]:
             set_state(status="searching")
             stop_event.wait(5)
             continue
 
         # Marcar cambio como pagado
-        marcar_cambio_pagado(reserva_id)
+        marcar_cambio_pagado(reserva_id, jugador_id)
 
         # ¡ÉXITO!
         fecha_fmt = datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -1267,15 +1345,16 @@ def mejora_loop(key, params):
                 "hora": hora_nueva,
                 "hora_anterior": hora_actual,
                 "tipo": cod_inst_nueva,
+                "modalidad": modalidad,
                 "jugadores": jugadores,
             }
         )
-        print(f"[Mejora:{reserva_id}] ✅ MEJORADA: {hora_actual} → {hora_nueva} {tipo_nombre.get(cod_inst_nueva, cod_inst_nueva)}")
+        print(f"[Mejora:{reserva_id}] ✅ MEJORADA: {hora_actual} → {hora_nueva} {nombre_salida(cod_inst_nueva, modalidad)}")
         send_telegram(
             f"🔄 <b>¡Reserva mejorada!</b>\n\n"
             f"📅 <b>Fecha:</b> {fecha_fmt}\n"
             f"🕐 <b>Antes:</b> {hora_actual} → <b>Ahora:</b> {hora_nueva}\n"
-            f"🏌️ <b>Campo:</b> {hueco.get('descripcion','').strip() or tipo_nombre.get(cod_inst_nueva, str(cod_inst_nueva))}\n"
+            f"🏌️ <b>Salida:</b> {nombre_salida(cod_inst_nueva, modalidad)}\n"
             f"🔖 <b>Ref:</b> #{reserva_id}"
         )
         break
