@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Mr. Mulligan v2.6 - API nueva del club, 9/18 hoyos y salida por el 10 -->
+<!-- Mr. Mulligan v2.7 - multiusuario: cada uno ve y borra solo sus búsquedas -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1150,6 +1150,7 @@ async function doLogin() {
         clave,
         jugadorId: data.jugadorId,
         nombre: data.nombre,
+        sessionToken: data.sessionToken,
       };
       sessionStorage.setItem('mm_session', JSON.stringify(state.session));
       mostrarPantallaPrincipal();
@@ -1164,6 +1165,42 @@ async function doLogin() {
 
   btn.disabled = false;
   btn.innerHTML = 'Entrar';
+}
+
+// Llamadas al backend con la sesión del usuario. Si el servidor se reinició y la sesión
+// ya no existe (401), se vuelve a entrar en silencio con las credenciales guardadas.
+var _renovandoSesion = null;
+function renovarSesion() {
+  if (!_renovandoSesion) {
+    _renovandoSesion = fetch(BACKEND_URL + '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.ok && d.sessionToken) {
+        state.session.sessionToken = d.sessionToken;
+        state.session.jugadorId = d.jugadorId;
+        sessionStorage.setItem('mm_session', JSON.stringify(state.session));
+        return true;
+      }
+      return false;
+    }).catch(function() { return false; }).finally(function() { _renovandoSesion = null; });
+  }
+  return _renovandoSesion;
+}
+
+async function apiFetch(path, opts) {
+  opts = opts || {};
+  var hacer = function() {
+    var h = Object.assign({}, opts.headers || {});
+    if (state.session && state.session.sessionToken) h['X-Session'] = state.session.sessionToken;
+    return fetch(BACKEND_URL + path, Object.assign({}, opts, { headers: h }));
+  };
+  var res = await hacer();
+  if (res.status === 401 && state.session && state.session.usuario) {
+    if (await renovarSesion()) res = await hacer();
+  }
+  return res;
 }
 
 function doLogout() {
@@ -1262,7 +1299,7 @@ function actualizarEstadoFecha() {
 
 async function cargarFechasDisponibles() {
   try {
-    const res = await fetch(BACKEND_URL + '/fechas', {
+    const res = await apiFetch('/fechas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1302,7 +1339,8 @@ async function cargarFechasDisponibles() {
 
 async function restaurarSnipers() {
   try {
-    const res = await fetch(`${BACKEND_URL}/status`);
+    const res = await apiFetch('/status');
+    if (!res.ok) return;
     const allStatus = await res.json();
     let restored = 0;
     Object.keys(allStatus).forEach(function(key) {
@@ -1330,7 +1368,7 @@ async function restaurarSnipers() {
 
 async function cargarContactos() {
   try {
-    const res = await fetch(`${BACKEND_URL}/contactos`, {
+    const res = await apiFetch('/contactos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1359,7 +1397,7 @@ async function abrirModalJugadores() {
   const fechaModal = document.getElementById('param-fecha').value;
   if (fechaModal && state.contacts.length > 0) {
     try {
-      const res = await fetch(`${BACKEND_URL}/validar_jugadores`, {
+      const res = await apiFetch('/validar_jugadores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1613,7 +1651,7 @@ async function iniciarBusqueda() {
   };
 
   try {
-    const res = await fetch(`${BACKEND_URL}/start`, {
+    const res = await apiFetch('/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params)
@@ -1635,7 +1673,8 @@ async function iniciarBusqueda() {
 
 async function pollSniper(key) {
   try {
-    const res = await fetch(`${BACKEND_URL}/status`);
+    const res = await apiFetch('/status');
+    if (!res.ok) return;
     const allStatus = await res.json();
     const data = allStatus[key] || {};
 
@@ -1685,8 +1724,8 @@ function renderSnipers(allStatus) {
 
   // Si no tenemos el estado, pedirlo y re-renderizar
   if (!allStatus) {
-    fetch(BACKEND_URL + '/status')
-      .then(function(r) { return r.json(); })
+    apiFetch('/status')
+      .then(function(r) { if (!r.ok) throw new Error('sesion'); return r.json(); })
       .then(function(d) { renderSnipers(d); })
       .catch(function() {});
     return;
@@ -1757,7 +1796,7 @@ function cancelarSniper(key) {
     delete activeSnipers[key];
   }
   var stopBody = key.indexOf('mejora_') === 0 ? { key: key } : { fecha: key };
-  fetch(BACKEND_URL + '/stop', {
+  apiFetch('/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(stopBody)
@@ -1816,7 +1855,7 @@ function mostrarExito(reserva, fecha) {
 async function anularReservaId(id) {
   if (!confirm('Cancelar esta reserva?')) return;
   try {
-    const res = await fetch(BACKEND_URL + '/anular', {
+    const res = await apiFetch('/anular', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave, jugadorId: state.session.jugadorId, reservaId: id })
@@ -1857,7 +1896,7 @@ async function anularReserva() {
   if (!confirm('¿Seguro que quieres anular esta reserva?')) return;
 
   try {
-    const res = await fetch(`${BACKEND_URL}/anular`, {
+    const res = await apiFetch('/anular', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1892,7 +1931,7 @@ let mejoraPendiente = null; // reserva sobre la que configurar mejora
 
 async function cargarReservas() {
   try {
-    const res = await fetch(`${BACKEND_URL}/reservas`, {
+    const res = await apiFetch('/reservas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ usuario: state.session.usuario, clave: state.session.clave, jugadorId: state.session.jugadorId })
@@ -2004,7 +2043,7 @@ async function iniciarMejora() {
   };
 
   try {
-    const res = await fetch(`${BACKEND_URL}/mover`, {
+    const res = await apiFetch('/mover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)

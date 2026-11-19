@@ -35,6 +35,14 @@ DEPORTE_GOLF = "6"  # ID fijo del deporte golf en la API
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
+# Varios usuarios: cada aviso va solo al dueño de la búsqueda.
+# TELEGRAM_CHATS = '{"33894": "123456789", "4386": "987654321"}' (jugadorId -> chat_id)
+# Sin entrada en el mapa, el CHAT_ID por defecto solo recibe los avisos de OWNER_JUGADOR_ID.
+try:
+    TELEGRAM_CHATS = {str(k): str(v) for k, v in json.loads(os.environ.get("TELEGRAM_CHATS", "{}")).items()}
+except ValueError:
+    TELEGRAM_CHATS = {}
+OWNER_JUGADOR_ID = os.environ.get("OWNER_JUGADOR_ID", "33894")
 
 # Modalidades (campo "tipo" de la API): 7 = 18 hoyos, 31 = 9 hoyos
 MODALIDAD_18 = 7
@@ -73,14 +81,81 @@ def make_sniper_state():
 
 
 # ══════════════════════════════════════════════════════
+#  SESIONES DE LA APP (multiusuario)
+#  Cada búsqueda pertenece a un jugador: se guarda como "{jugadorId}|{clave pública}"
+#  (clave pública = fecha "2026-11-21" o "mejora_{reservaId}"). Cada usuario solo ve
+#  y puede parar las suyas.
+# ══════════════════════════════════════════════════════
+import secrets
+app_sesiones = {}  # token de sesión de la app -> jugador_id (str)
+app_sesiones_lock = threading.Lock()
+
+
+def crear_sesion_app(jugador_id):
+    token = secrets.token_urlsafe(24)
+    with app_sesiones_lock:
+        app_sesiones[token] = str(jugador_id)
+    return token
+
+
+def autenticar(body=None):
+    """
+    jugador_id (str) del usuario que hace la petición, o None.
+    1) Cabecera X-Session con el token que dio /login.
+    2) Si no (p. ej. Render se reinició), usuario+clave del cuerpo validados contra el club.
+    """
+    body = body or {}
+    token = request.headers.get("X-Session") or body.get("sessionToken")
+    if token:
+        with app_sesiones_lock:
+            jid = app_sesiones.get(token)
+        if jid:
+            return jid
+    usuario, clave = body.get("usuario"), body.get("clave")
+    if usuario and clave:
+        with _sesiones_lock:
+            for jid, s in _sesiones.items():
+                if s["usuario"] == usuario and s["clave"] == clave:
+                    return jid
+        try:
+            res = registrar_sesion(usuario, clave)
+            if res["ok"]:
+                return str(res["jugadorId"])
+        except Exception as e:
+            print(f"[auth] Error validando credenciales: {e}")
+    return None
+
+
+def no_autorizado():
+    return jsonify({"ok": False, "error": "sesion", "mensaje": "Sesión caducada, vuelve a entrar"}), 401
+
+
+def clave_interna(jugador_id, publica):
+    return f"{jugador_id}|{publica}"
+
+
+def clave_publica(clave):
+    return clave.split("|", 1)[1] if "|" in clave else clave
+
+
+def es_de(clave, jugador_id):
+    return clave.startswith(f"{jugador_id}|")
+
+
+def params_publicos(params):
+    """Parámetros de una búsqueda sin credenciales (nunca devolver la clave del club)."""
+    return {k: v for k, v in (params or {}).items() if k not in ("usuario", "clave", "sessionToken")}
+
+
+# ══════════════════════════════════════════════════════
 #  ENDPOINTS FLASK
 # ══════════════════════════════════════════════════════
 
 @app.route("/", methods=["GET"])
 def health():
     with snipers_lock:
-        resumen = {f: {"status": s["status"], "attempts": s["attempts"]} for f, s in snipers.items()}
-    return jsonify({"ok": True, "service": "Mr. Mulligan", "snipers": resumen})
+        activas = sum(1 for s in snipers.values() if s["status"] == "searching")
+    return jsonify({"ok": True, "service": "Mr. Mulligan", "busquedas_activas": activas})
 
 
 @app.route("/login", methods=["POST"])
@@ -95,6 +170,7 @@ def login_endpoint():
 
     resultado = do_login(usuario, clave)
     if resultado["ok"]:
+        resultado["sessionToken"] = crear_sesion_app(resultado["jugadorId"])
         return jsonify(resultado)
     else:
         return jsonify(resultado), 401
@@ -106,9 +182,10 @@ def contactos_endpoint():
     body = request.get_json()
     usuario = body.get("usuario", "")
     clave = body.get("clave", "")
-    jugador_id = body.get("jugadorId", "")
-
     asegurar_sesion(body)
+    jugador_id = autenticar(body)
+    if not jugador_id:
+        return no_autorizado()
     try:
         contactos = get_contactos(jugador_id)
         print(f"[contactos] Total: {len(contactos)}")
@@ -129,63 +206,78 @@ def start_sniper():
 
     fecha = body["fecha"]
     asegurar_sesion(body)
+    jid = autenticar(body)
+    if not jid:
+        return no_autorizado()
+    body["jugadorId"] = int(jid)  # el titular siempre es quien está autenticado
+    key = clave_interna(jid, fecha)
     poll_interval = int(body.get("pollInterval", POLL_INTERVAL_DEFAULT))
     poll_interval = max(10, min(300, poll_interval))
 
     with snipers_lock:
-        if fecha in snipers and snipers[fecha]["status"] == "searching":
-            snipers[fecha]["stop_event"].set()
+        if key in snipers and snipers[key]["status"] == "searching":
+            snipers[key]["stop_event"].set()
             time.sleep(0.5)
         state = make_sniper_state()
         state["status"] = "searching"
         state["mensaje"] = "Iniciando..."
         state["params"] = body
         state["poll_interval"] = poll_interval
-        snipers[fecha] = state
+        state["owner"] = jid
+        snipers[key] = state
 
-    thread = threading.Thread(target=sniper_loop, args=(fecha, body), daemon=True)
+    thread = threading.Thread(target=sniper_loop, args=(fecha, body, key), daemon=True)
     with snipers_lock:
-        snipers[fecha]["thread"] = thread
+        snipers[key]["thread"] = thread
     thread.start()
 
     return jsonify({"ok": True, "fecha": fecha, "pollInterval": poll_interval, "mensaje": f"Sniper iniciado para {fecha}"})
 
 
-@app.route("/status", methods=["GET"])
+@app.route("/status", methods=["GET", "POST"])
 def get_status():
-    """Devuelve estado de todos los snipers, o uno concreto con ?fecha=."""
+    """Estado de las búsquedas del usuario autenticado (todas, o una con ?fecha=)."""
+    jid = autenticar(request.get_json(silent=True) or {})
+    if not jid:
+        return no_autorizado()
     fecha = request.args.get("fecha")
+
+    def resumen(s):
+        return {"status": s["status"], "attempts": s["attempts"], "mensaje": s["mensaje"],
+                "error": s["error"], "reserva": s["reserva"], "pollInterval": s["poll_interval"],
+                "params": params_publicos(s["params"])}
+
     with snipers_lock:
         if fecha:
-            if fecha not in snipers:
+            s = snipers.get(clave_interna(jid, fecha))
+            if not s:
                 return jsonify({"status": "idle", "attempts": 0, "mensaje": "", "error": "", "reserva": None})
-            s = snipers[fecha]
-            return jsonify({"fecha": fecha, "status": s["status"], "attempts": s["attempts"],
-                            "mensaje": s["mensaje"], "error": s["error"], "reserva": s["reserva"],
-                            "pollInterval": s["poll_interval"], "params": s["params"]})
-        result = {}
-        for f, s in snipers.items():
-            result[f] = {"status": s["status"], "attempts": s["attempts"], "mensaje": s["mensaje"],
-                         "error": s["error"], "reserva": s["reserva"], "pollInterval": s["poll_interval"],
-                         "params": s["params"]}
+            return jsonify({"fecha": fecha, **resumen(s)})
+        result = {clave_publica(k): resumen(s) for k, s in snipers.items() if es_de(k, jid)}
     return jsonify(result)
 
 
 @app.route("/stop", methods=["POST"])
 def stop_sniper():
-    """Detiene el sniper de una fecha o todos."""
-    body = request.get_json() or {}
-    fecha = body.get("fecha") or body.get("key")  # key = "mejora_{id}" para búsquedas de mejora
+    """Detiene una búsqueda (o todas) del usuario autenticado. Nunca las de otro usuario."""
+    body = request.get_json(silent=True) or {}
+    jid = autenticar(body)
+    if not jid:
+        return no_autorizado()
+    publica = body.get("fecha") or body.get("key")  # key = "mejora_{id}" para búsquedas de mejora
     with snipers_lock:
-        if fecha:
-            targets = [fecha] if fecha in snipers else []
+        if publica:
+            k = clave_interna(jid, publica)
+            targets = [k] if k in snipers else []
         else:
-            targets = list(snipers.keys())
-        for f in targets:
-            snipers[f]["stop_event"].set()
-            snipers[f]["status"] = "idle"
-            snipers[f]["mensaje"] = "Busqueda cancelada"
-    return jsonify({"ok": True, "detenidos": targets})
+            targets = [k for k in snipers if es_de(k, jid)]
+        for k in targets:
+            snipers[k]["stop_event"].set()
+            snipers[k]["status"] = "idle"
+            snipers[k]["mensaje"] = "Busqueda cancelada"
+    if publica and not targets:
+        return jsonify({"ok": False, "error": "Esa búsqueda no existe o no es tuya"}), 404
+    return jsonify({"ok": True, "detenidos": [clave_publica(k) for k in targets]})
 
 
 def ahora_madrid():
@@ -252,7 +344,7 @@ APERTURAS_FILE = os.environ.get("APERTURAS_FILE", "aperturas.log")
 aperturas = []  # también en memoria para consultarlas vía /aperturas
 
 
-def registrar_apertura(fecha, detectada, ultima_cerrada):
+def registrar_apertura(fecha, detectada, ultima_cerrada, jugador_id=None):
     """Guarda cuándo se detectó que un día abrió para reservas (para ajustar la hora de comprobación)."""
     linea = {
         "fecha_juego": fecha,
@@ -267,7 +359,7 @@ def registrar_apertura(fecha, detectada, ultima_cerrada):
     except Exception as e:
         print(f"[APERTURA] No se pudo escribir el fichero: {e}")
     rango = f"entre las {ultima_cerrada:%H:%M:%S} y las {detectada:%H:%M:%S}" if ultima_cerrada else f"antes de las {detectada:%H:%M:%S}"
-    send_telegram(f"🔓 <b>Reservas abiertas</b> para el {datetime.strptime(fecha, '%Y-%m-%d'):%d/%m}\nAbrieron {rango} ({detectada:%d/%m}). Buscando hora…")
+    send_telegram(f"🔓 <b>Reservas abiertas</b> para el {datetime.strptime(fecha, '%Y-%m-%d'):%d/%m}\nAbrieron {rango} ({detectada:%d/%m}). Buscando hora…", jugador_id)
 
 
 @app.route("/aperturas", methods=["GET"])
@@ -288,7 +380,10 @@ def fechas_endpoint():
     """Devuelve las fechas disponibles para reservar."""
     body = request.get_json(silent=True) or {}
     asegurar_sesion(body)
-    fechas = get_fechas_abiertas(body.get("jugadorId"))
+    jid = autenticar(body)
+    if not jid:
+        return no_autorizado()
+    fechas = get_fechas_abiertas(jid)
     if fechas is None:
         return jsonify({"ok": False, "fechas": []})
     print(f"[fechas] {len(fechas)} fechas disponibles: {fechas[:5]}")
@@ -299,10 +394,12 @@ def fechas_endpoint():
 def validar_jugadores_endpoint():
     """Verifica qué jugadores ya tienen reserva en una fecha concreta."""
     body = request.get_json()
-    jugador_id = body.get("jugadorId")
     fecha = body.get("fecha", "")
     ids = body.get("ids", [])
     asegurar_sesion(body)
+    jugador_id = autenticar(body)
+    if not jugador_id:
+        return no_autorizado()
 
     ocupados = [jid for jid in ids if not jugador_puede_jugar(jugador_id, fecha, jid)]
     print(f"[validar_jugadores] fecha={fecha} ocupados={ocupados}")
@@ -313,13 +410,17 @@ def validar_jugadores_endpoint():
 def reservas_endpoint():
     """Devuelve las reservas actuales del jugador."""
     body = request.get_json()
-    jugador_id = body.get("jugadorId")
     asegurar_sesion(body)
+    jugador_id = autenticar(body)
+    if not jugador_id:
+        return no_autorizado()
     reservas = get_reservas(jugador_id)
     # Limpiar snipers cuya reserva fue cancelada externamente
     ids_activos = {r["id"] for r in reservas if r.get("id")}
     with snipers_lock:
         for key, s in list(snipers.items()):
+            if not es_de(key, jugador_id):
+                continue
             if s["status"] == "reserved" and s.get("reserva"):
                 rid = s["reserva"].get("id")
                 if rid and rid not in ids_activos:
@@ -344,6 +445,10 @@ def mover_endpoint():
     reserva_id = body["reservaId"]
     fecha = body["fecha"]
     asegurar_sesion(body)
+    jid = autenticar(body)
+    if not jid:
+        return no_autorizado()
+    body["jugadorId"] = int(jid)
     poll_interval = int(body.get("pollInterval", 60))
     poll_interval = max(10, min(300, poll_interval))
 
@@ -351,8 +456,13 @@ def mover_endpoint():
     if not es_modificable(reserva_id, body["jugadorId"]):
         return jsonify({"ok": False, "error": "Esta reserva no se puede modificar"})
 
-    # Usar clave única: "mejora_{reservaId}" para no colisionar con snipers de reserva nueva
-    key = f"mejora_{reserva_id}"
+    # Solo se pueden mejorar reservas propias
+    if not any(str(r.get("id")) == str(reserva_id) for r in get_reservas(jid)):
+        return jsonify({"ok": False, "error": "Esa reserva no es tuya"}), 403
+
+    # Clave única: "mejora_{reservaId}" (prefijada con el dueño) para no colisionar con reservas nuevas
+    publica = f"mejora_{reserva_id}"
+    key = clave_interna(jid, publica)
 
     with snipers_lock:
         if key in snipers and snipers[key]["status"] == "searching":
@@ -363,6 +473,7 @@ def mover_endpoint():
         state["mensaje"] = "Buscando mejora..."
         state["params"] = body
         state["poll_interval"] = poll_interval
+        state["owner"] = jid
         snipers[key] = state
 
     thread = threading.Thread(target=mejora_loop, args=(key, body), daemon=True)
@@ -370,7 +481,7 @@ def mover_endpoint():
         snipers[key]["thread"] = thread
     thread.start()
 
-    return jsonify({"ok": True, "key": key, "mensaje": f"Buscando mejora para reserva #{reserva_id}"})
+    return jsonify({"ok": True, "key": publica, "mensaje": f"Buscando mejora para reserva #{reserva_id}"})
 
 
 @app.route("/anular", methods=["POST"])
@@ -382,7 +493,12 @@ def anular_endpoint():
     reserva_id = body.get("reservaId", "")
 
     asegurar_sesion(body)
-    jugador_id = body.get("jugadorId")
+    jugador_id = autenticar(body)
+    if not jugador_id:
+        return no_autorizado()
+    # Solo se pueden anular reservas propias
+    if not any(str(r.get("id")) == str(reserva_id) for r in get_reservas(jugador_id)):
+        return jsonify({"ok": False, "error": "Esa reserva no es tuya"}), 403
     try:
         res = anular_reserva(reserva_id, jugador_id)
         return jsonify({"ok": True} if res["ok"] else {"ok": False, "error": res["error"]})
@@ -1065,15 +1181,17 @@ def time_to_minutes(t):
         return 0
 
 
-def send_telegram(mensaje):
-    """Envía notificación por Telegram."""
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("[Telegram] No configurado")
+def send_telegram(mensaje, jugador_id=None):
+    """Envía notificación por Telegram al dueño de la búsqueda (None = dueño de la app)."""
+    jid = str(jugador_id or OWNER_JUGADOR_ID)
+    chat = TELEGRAM_CHATS.get(jid) or (CHAT_ID if jid == str(OWNER_JUGADOR_ID) else "")
+    if not TELEGRAM_TOKEN or not chat:
+        print(f"[Telegram] Sin chat configurado para {jid}")
         return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, json={
-            "chat_id": CHAT_ID,
+            "chat_id": chat,
             "text": mensaje,
             "parse_mode": "HTML"
         }, timeout=5)
@@ -1085,13 +1203,14 @@ def send_telegram(mensaje):
 #  BUCLE PRINCIPAL DEL SNIPER
 # ══════════════════════════════════════════════════════
 
-def sniper_loop(fecha, params):
-    """Bucle independiente por fecha. Lee/escribe solo su propio estado en snipers[fecha]."""
+def sniper_loop(fecha, params, key=None):
+    """Bucle independiente por búsqueda. Lee/escribe solo su propio estado en snipers[key]."""
+    key = key or fecha
 
     def set_state(**kwargs):
         with snipers_lock:
-            if fecha in snipers:
-                snipers[fecha].update(kwargs)
+            if key in snipers:
+                snipers[key].update(kwargs)
 
     usuario = params["usuario"]
     clave = params["clave"]
@@ -1104,8 +1223,8 @@ def sniper_loop(fecha, params):
     modo_hora = params.get("modo_hora")      # pronto | mitad | tarde | pronto_mitad | mitad_tarde
 
     with snipers_lock:
-        stop_event = snipers[fecha]["stop_event"]
-        poll_interval = snipers[fecha]["poll_interval"]
+        stop_event = snipers[key]["stop_event"]
+        poll_interval = snipers[key]["poll_interval"]
 
     modalidad, salidas = normalizar_modalidad(params)
     tipo = ",".join(str(s) for s in salidas)
@@ -1126,7 +1245,7 @@ def sniper_loop(fecha, params):
             if abiertas is not None:
                 print(f"[Sniper:{fecha}] Día abierto para reservas")
                 if ultima_cerrada:  # solo si lo vimos cerrado antes: así sabemos cuándo abrió
-                    registrar_apertura(fecha, ahora, ultima_cerrada)
+                    registrar_apertura(fecha, ahora, ultima_cerrada, jugador_id)
             break  # abierto (o no se pudo comprobar): pasar a buscar hora
         # Ventana de apertura (07:55-08:15): comprobar cada 10s para no llegar tarde
         en_ventana = ahora.replace(hour=7, minute=55, second=0) <= ahora <= ahora.replace(hour=8, minute=15, second=0)
@@ -1138,9 +1257,9 @@ def sniper_loop(fecha, params):
 
     while not stop_event.is_set():
         with snipers_lock:
-            poll_interval = snipers[fecha]["poll_interval"]
-            snipers[fecha]["attempts"] += 1
-            intento = snipers[fecha]["attempts"]
+            poll_interval = snipers[key]["poll_interval"]
+            snipers[key]["attempts"] += 1
+            intento = snipers[key]["attempts"]
 
         print(f"[Sniper:{fecha}] Intento #{intento}")
         set_state(mensaje=f"Buscando huecos en {desde}–{hasta}… (cada {poll_interval}s)")
@@ -1206,14 +1325,15 @@ def sniper_loop(fecha, params):
             f"🕐 <b>Hora:</b> {hora}\n"
             f"🏌️ <b>Salida:</b> {nombre_salida(cod_instalacion, modalidad)}\n"
             f"👥 <b>Jugadores:</b> {len(jugadores_finales)}\n"
-            f"🔖 <b>Ref:</b> #{reserva_id}"
+            f"🔖 <b>Ref:</b> #{reserva_id}",
+            jugador_id,
         )
         break
 
     with snipers_lock:
-        if fecha in snipers and snipers[fecha]["status"] == "searching":
-            snipers[fecha]["status"] = "idle"
-            snipers[fecha]["mensaje"] = "Búsqueda detenida"
+        if key in snipers and snipers[key]["status"] == "searching":
+            snipers[key]["status"] = "idle"
+            snipers[key]["mensaje"] = "Búsqueda detenida"
     print(f"[Sniper:{fecha}] Finalizado")
 
 
@@ -1355,7 +1475,8 @@ def mejora_loop(key, params):
             f"📅 <b>Fecha:</b> {fecha_fmt}\n"
             f"🕐 <b>Antes:</b> {hora_actual} → <b>Ahora:</b> {hora_nueva}\n"
             f"🏌️ <b>Salida:</b> {nombre_salida(cod_inst_nueva, modalidad)}\n"
-            f"🔖 <b>Ref:</b> #{reserva_id}"
+            f"🔖 <b>Ref:</b> #{reserva_id}",
+            jugador_id,
         )
         break
 
