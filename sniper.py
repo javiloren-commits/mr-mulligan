@@ -81,6 +81,66 @@ def make_sniper_state():
 
 
 # ══════════════════════════════════════════════════════
+#  PERSISTENCIA DE BÚSQUEDAS
+#  Las búsquedas viven en memoria; se copian a disco para sobrevivir a un reinicio
+#  del proceso (p. ej. gunicorn mata el worker por timeout). Un redeploy de Render
+#  borra el disco: para eso el frontend guarda copia y las relanza.
+# ══════════════════════════════════════════════════════
+STATE_FILE = os.environ.get("STATE_FILE", "busquedas.json")
+_state_file_lock = threading.Lock()
+CAMPOS_PERSISTENTES = ("status", "attempts", "mensaje", "error", "reserva", "params", "poll_interval", "owner")
+
+
+def guardar_estado():
+    """Escribe todas las búsquedas a disco (sin hilos ni eventos). No llamar con snipers_lock cogido."""
+    try:
+        with snipers_lock:
+            datos = {k: {c: s.get(c) for c in CAMPOS_PERSISTENTES} for k, s in snipers.items()}
+        with _state_file_lock:
+            tmp = STATE_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(datos, f)
+            os.replace(tmp, STATE_FILE)
+    except Exception as e:
+        print(f"[estado] No se pudo guardar: {e}")
+
+
+def restaurar_estado():
+    """Al arrancar: recupera las búsquedas guardadas y relanza las que seguían buscando."""
+    try:
+        with open(STATE_FILE) as f:
+            datos = json.load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        print(f"[estado] Fichero ilegible: {e}")
+        return
+    hoy = datetime.now(TZ_MADRID).strftime("%Y-%m-%d")
+    relanzar = []
+    with snipers_lock:
+        for key, d in datos.items():
+            params = d.get("params") or {}
+            if (params.get("fecha") or "") < hoy:
+                continue  # búsqueda de un día ya pasado
+            state = make_sniper_state()
+            state.update({c: d.get(c, state.get(c)) for c in CAMPOS_PERSISTENTES})
+            if state["status"] in ("searching", "found"):
+                state["status"] = "searching"
+                state["mensaje"] = "Reanudada tras reinicio del servidor"
+                relanzar.append(key)
+            snipers[key] = state
+    for key in relanzar:
+        params = snipers[key]["params"]
+        if "mejora_" in key:
+            t = threading.Thread(target=mejora_loop, args=(key, params), daemon=True)
+        else:
+            t = threading.Thread(target=sniper_loop, args=(params["fecha"], params, key), daemon=True)
+        snipers[key]["thread"] = t
+        t.start()
+    print(f"[estado] Restauradas {len(datos)} búsquedas ({len(relanzar)} relanzadas)")
+
+
+# ══════════════════════════════════════════════════════
 #  SESIONES DE LA APP (multiusuario)
 #  Cada búsqueda pertenece a un jugador: se guarda como "{jugadorId}|{clave pública}"
 #  (clave pública = fecha "2026-11-21" o "mejora_{reservaId}"). Cada usuario solo ve
@@ -211,6 +271,10 @@ def start_sniper():
         return no_autorizado()
     body["jugadorId"] = int(jid)  # el titular siempre es quien está autenticado
     key = clave_interna(jid, fecha)
+    if body.get("relanzada"):
+        # El frontend la relanza porque el servidor la perdió: si ya hay reserva ese día, no repetir
+        if any(r.get("fecha") == fecha for r in get_reservas(jid)):
+            return jsonify({"ok": False, "yaReservada": True, "error": "Ya tienes reserva ese día"})
     poll_interval = int(body.get("pollInterval", POLL_INTERVAL_DEFAULT))
     poll_interval = max(10, min(300, poll_interval))
 
@@ -230,6 +294,7 @@ def start_sniper():
     with snipers_lock:
         snipers[key]["thread"] = thread
     thread.start()
+    guardar_estado()
 
     return jsonify({"ok": True, "fecha": fecha, "pollInterval": poll_interval, "mensaje": f"Sniper iniciado para {fecha}"})
 
@@ -275,6 +340,7 @@ def stop_sniper():
             snipers[k]["stop_event"].set()
             snipers[k]["status"] = "idle"
             snipers[k]["mensaje"] = "Busqueda cancelada"
+    guardar_estado()
     if publica and not targets:
         return jsonify({"ok": False, "error": "Esa búsqueda no existe o no es tuya"}), 404
     return jsonify({"ok": True, "detenidos": [clave_publica(k) for k in targets]})
@@ -480,6 +546,7 @@ def mover_endpoint():
     with snipers_lock:
         snipers[key]["thread"] = thread
     thread.start()
+    guardar_estado()
 
     return jsonify({"ok": True, "key": publica, "mensaje": f"Buscando mejora para reserva #{reserva_id}"})
 
@@ -574,7 +641,9 @@ def asegurar_sesion(body):
 def get_token(jugador_id=None, forzar=False):
     """Token válido para el jugador (renueva con las credenciales guardadas si caduca)."""
     with _sesiones_lock:
-        if jugador_id is not None and str(jugador_id) in _sesiones:
+        if jugador_id is not None:
+            if str(jugador_id) not in _sesiones:
+                return None  # nunca usar el token de otro usuario
             s = dict(_sesiones[str(jugador_id)])
         elif _sesiones:
             s = dict(next(iter(_sesiones.values())))
@@ -1211,7 +1280,9 @@ def sniper_loop(fecha, params, key=None):
         with snipers_lock:
             if key in snipers:
                 snipers[key].update(kwargs)
+        guardar_estado()
 
+    asegurar_sesion(params)  # token del dueño (necesario si la búsqueda se restauró tras un reinicio)
     usuario = params["usuario"]
     clave = params["clave"]
     jugador_id = params["jugadorId"]
@@ -1346,7 +1417,9 @@ def mejora_loop(key, params):
         with snipers_lock:
             if key in snipers:
                 snipers[key].update(kwargs)
+        guardar_estado()
 
+    asegurar_sesion(params)  # token del dueño (necesario si la búsqueda se restauró tras un reinicio)
     usuario = params["usuario"]
     clave = params["clave"]
     jugador_id = params["jugadorId"]
@@ -1488,6 +1561,8 @@ def mejora_loop(key, params):
 
 
 # ══════════════════════════════════════════════════════
+restaurar_estado()
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

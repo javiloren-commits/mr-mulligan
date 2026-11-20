@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Mr. Mulligan v2.7.1 - multiusuario + Pares 3 -->
+<!-- Mr. Mulligan v2.8 - búsquedas que sobreviven a reinicios + Sur h1 o h10 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1337,12 +1337,74 @@ async function cargarFechasDisponibles() {
   }
 }
 
+// ── Copia local de las búsquedas ──
+// Si el servidor se reinicia (redeploy de Render) pierde las búsquedas en memoria.
+// Guardamos sus parámetros (sin contraseña) en este dispositivo y las relanzamos.
+function _bkKey() { return 'mm_busquedas_' + (state.session ? state.session.jugadorId : ''); }
+function leerBackup() {
+  try { return JSON.parse(localStorage.getItem(_bkKey()) || '{}') || {}; } catch (e) { return {}; }
+}
+function guardarBackup(b) {
+  try { localStorage.setItem(_bkKey(), JSON.stringify(b)); } catch (e) {}
+}
+function backupBusqueda(key, params) {
+  var b = leerBackup();
+  var p = Object.assign({}, params);
+  delete p.usuario; delete p.clave; delete p.relanzada;
+  b[key] = p;
+  guardarBackup(b);
+}
+function olvidarBusqueda(key) {
+  var b = leerBackup();
+  if (b[key]) { delete b[key]; guardarBackup(b); }
+}
+function hoyLocal() {
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+var _relanzando = {};
+async function relanzarBusqueda(key) {
+  if (_relanzando[key]) return false;
+  var p = leerBackup()[key];
+  if (!p) return false;
+  if ((p.fecha || '') < hoyLocal()) { olvidarBusqueda(key); return false; }
+  _relanzando[key] = true;
+  setTimeout(function() { delete _relanzando[key]; }, 30000);
+  try {
+    var body = Object.assign({}, p, {
+      usuario: state.session.usuario, clave: state.session.clave,
+      jugadorId: state.session.jugadorId, relanzada: true
+    });
+    var path = key.indexOf('mejora_') === 0 ? '/mover' : '/start';
+    var res = await apiFetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    var d = await res.json();
+    if (!d.ok) {
+      console.warn('No se pudo relanzar ' + key + ': ' + (d.error || ''));
+      olvidarBusqueda(key);
+      return false;
+    }
+    console.log('Búsqueda relanzada tras reinicio del servidor: ' + key);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function restaurarSnipers() {
   try {
     const res = await apiFetch('/status');
     if (!res.ok) return;
     const allStatus = await res.json();
     let restored = 0;
+    // Búsquedas de este dispositivo que el servidor ha perdido -> relanzarlas
+    var backup = leerBackup();
+    for (const key of Object.keys(backup)) {
+      if (!allStatus[key] && await relanzarBusqueda(key)) {
+        allStatus[key] = { status: 'searching', params: backup[key] };
+      }
+    }
     Object.keys(allStatus).forEach(function(key) {
       var s = allStatus[key];
       if (s.status === 'searching' || s.status === 'found' || s.status === 'reserved') {
@@ -1491,7 +1553,8 @@ function cerrarModalJugadores(e) {
 var SALIDA_NOMBRE = {11:'Norte h1', 13:'Sur h1', 14:'Sur h10', 15:'Pares 3'};
 var SALIDAS_POR_MODALIDAD = {
   '7': [['11','Norte (hoyo 1)'], ['13','Sur (hoyo 1)'], ['14','Sur (hoyo 10)'],
-        ['11,13','Norte o Sur (hoyo 1)'], ['11,13,14','Cualquier salida'], ['15','Pares 3']],
+        ['11,13','Norte o Sur (hoyo 1)'], ['13,14','Sur (hoyo 1 o 10)'],
+        ['11,13,14','Cualquier salida (Norte o Sur)'], ['15','Pares 3']],
   '31': [['11','Norte (hoyo 1)']]
 };
 
@@ -1659,7 +1722,8 @@ async function iniciarBusqueda() {
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al iniciar', 'error'); return; }
 
-    // Registrar sniper localmente
+    // Registrar sniper localmente (y copia en el dispositivo por si el servidor se reinicia)
+    backupBusqueda(fecha, params);
     activeSnipers[fecha] = { params, pollTimer: null, _lastStatus: 'searching' };
     activeSnipers[fecha].pollTimer = setInterval(() => pollSniper(fecha), 2000);
     pollSniper(fecha); // inmediato — también renderiza
@@ -1676,18 +1740,28 @@ async function pollSniper(key) {
     const res = await apiFetch('/status');
     if (!res.ok) return;
     const allStatus = await res.json();
-    const data = allStatus[key] || {};
+
+    // El servidor ya no conoce esta búsqueda (se reinició): relanzarla desde la copia local
+    if (!allStatus[key]) {
+      if (activeSnipers[key]) relanzarBusqueda(key);
+      renderSnipers(allStatus);
+      return;
+    }
+    const data = allStatus[key];
 
     // Track last known status for failsafe
     if (activeSnipers[key]) activeSnipers[key]._lastStatus = data.status || 'idle';
 
     if (data.status === 'reserved') {
+      olvidarBusqueda(key);
       if (activeSnipers[key]) clearInterval(activeSnipers[key].pollTimer);
       renderSnipers(allStatus);
       renderCompletadas(allStatus);
       mostrarExito(data.reserva, key);
       return;
     }
+
+    if (data.status === 'idle' || data.status === 'cancelled') olvidarBusqueda(key);
 
     if (data.status === 'idle' && activeSnipers[key]) {
       clearInterval(activeSnipers[key].pollTimer);
@@ -1791,6 +1865,7 @@ function cancelarSniperById(safeId) {
 }
 
 function cancelarSniper(key) {
+  olvidarBusqueda(key);
   if (activeSnipers[key]) {
     clearInterval(activeSnipers[key].pollTimer);
     delete activeSnipers[key];
@@ -2055,6 +2130,7 @@ async function iniciarMejora() {
     cerrarModal2();
 
     // Registrar como sniper activo con clave especial
+    backupBusqueda(key, body);
     activeSnipers[key] = { params: { ...body, tipo, fecha: r.fecha }, pollTimer: null, _lastStatus: 'searching' };
     activeSnipers[key].pollTimer = setInterval(() => pollSniper(key), 2000);
     document.getElementById('status-panel').classList.add('visible');
