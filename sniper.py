@@ -931,32 +931,30 @@ def _primer_ok(intentos, etiqueta, defecto):
 
 def mover_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores, modalidad=MODALIDAD_18):
     """
-    Mueve una reserva a otro horario/salida.
-    OJO: el endpoint de la API nueva no está capturado todavía; se prueba el nombre esperado
-    y, si no existe, la API antigua.
+    PUT /Reservas/moverreserva (capturado nov-2026: Gestionar -> Cambiar).
+    Después hay que crear ticket, pagar la diferencia y marcar el cambio como pagado.
     """
-    reserva = build_reserva_base(jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores, modalidad,
-                                 codigo=reserva_id)
-    res = _primer_ok([
-        ("nueva PUT", lambda: api("PUT", "Reservas/moverreserva", jugador_id, body=reserva)),
-        ("nueva POST", lambda: api("POST", "Reservas/moverreserva", jugador_id, body=reserva)),
-        ("antigua", lambda: _legacy("PUT", "Reservas/json/moverreserva", {"reserva": reserva})),
-    ], "moverreserva", "Error moviendo reserva")
-    # La API antigua envuelve la respuesta en MoverReservaResult
-    if res["ok"] and "MoverReservaResult" in res["data"]:
-        inner = res["data"]["MoverReservaResult"]
-        if not inner.get("StatusOK"):
-            return {"ok": False, "error": inner.get("Mensaje") or "Error moviendo reserva"}
-    return {"ok": True} if res["ok"] else res
+    try:
+        reserva = build_reserva_base(jugador_id, fecha, hora_nueva, cod_instalacion_nueva, jugadores, modalidad,
+                                     codigo=reserva_id)
+        print(f"[moverreserva] #{reserva_id} -> {reserva['FechaStr']} inst={cod_instalacion_nueva} tipo={modalidad}")
+        res = _resultado(api("PUT", "Reservas/moverreserva", jugador_id, body=reserva), "moverreserva",
+                         "Error moviendo reserva")
+        return {"ok": True} if res["ok"] else res
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"ok": False, "error": str(e)}
 
 
 def marcar_cambio_pagado(reserva_id, jugador_id=None):
-    res = _primer_ok([
-        ("nueva", lambda: api("GET", "Reservas/marcarcambiopagado", jugador_id,
-                              params={"codigo": reserva_id, "procedencia": PROCEDENCIA, "idioma": IDIOMA})),
-        ("antigua", lambda: _legacy("GET", f"Reservas/json/marcarcambiopagado/{reserva_id},{PROCEDENCIA},{IDIOMA}")),
-    ], "marcarcambiopagado", "No se pudo marcar")
-    return res["ok"]
+    """POST /Reservas/marcarcambiopagado?codreserva=... (último paso del cambio)."""
+    try:
+        r = api("POST", "Reservas/marcarcambiopagado", jugador_id,
+                params={"codreserva": reserva_id, "idioma": IDIOMA, "procedencia": PROCEDENCIA}, timeout=10)
+        return _resultado(r, "marcarcambiopagado", "No se pudo marcar")["ok"]
+    except Exception as e:
+        print(f"[marcarcambiopagado] Error: {e}")
+        return False
 
 
 def anular_reserva(reserva_id, jugador_id=None):
@@ -1509,20 +1507,27 @@ def mejora_loop(key, params):
             stop_event.wait(5)
             continue
 
-        # Ticket del nuevo horario
-        ticket_res = crear_ticket(reserva_id, jugador_id)
-        if not ticket_res["ok"]:
-            set_state(status="searching")
-            stop_event.wait(5)
-            continue
-
-        # Pagar el cambio
-        pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores,
-                                 ticket_res["ticket"], modalidad)
+        # A partir de aquí la reserva YA está movida: no volver a moverla; pagar el cambio
+        # con reintentos y, si no hay manera, avisar para terminarlo en la app del club.
+        pago_res = {"ok": False, "error": "sin intentar"}
+        for intento_pago in range(3):
+            ticket_res = crear_ticket(reserva_id, jugador_id)
+            if ticket_res["ok"]:
+                pago_res = pagar_reserva(reserva_id, jugador_id, fecha, hora_nueva, cod_inst_nueva, jugadores,
+                                         ticket_res["ticket"], modalidad)
+                if pago_res["ok"]:
+                    break
+            else:
+                pago_res = ticket_res
+            print(f"[Mejora:{reserva_id}] Pago del cambio fallido ({pago_res.get('error')}), intento {intento_pago + 1}/3")
+            time.sleep(3)
         if not pago_res["ok"]:
-            set_state(status="searching")
-            stop_event.wait(5)
-            continue
+            set_state(status="error",
+                      error=f"Reserva movida a las {hora_nueva} pero el pago del cambio falló: {pago_res.get('error')}. "
+                            f"Revísala en la app del club.")
+            send_telegram(f"⚠️ <b>Reserva #{reserva_id} movida a las {hora_nueva}</b> pero no se pudo pagar el cambio. "
+                          f"Revísala en la app del club.", jugador_id)
+            break
 
         # Marcar cambio como pagado
         marcar_cambio_pagado(reserva_id, jugador_id)
