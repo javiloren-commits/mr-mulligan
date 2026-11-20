@@ -1456,36 +1456,28 @@ def mejora_loop(key, params):
 
         huecos = parsear_huecos(instalaciones, desde, hasta)
         huecos = [h for h in huecos if h["cod_instalacion"] in salidas]
-        # Un hueco es "mejor" si:
-        # 1. Es más temprano que la hora actual, O
-        # 2. Es la misma hora pero en el campo preferido (y el actual no lo es)
+        # "Mejor" lo define la franja elegida (puede ser más pronto o más tarde que la hora actual):
+        # se elige el mejor hueco de la franja según salida preferida y Pronto/Mitad/Tarde.
+        # Si la reserva actual ya está en la franja, compite con los huecos libres: solo se mueve
+        # si sale elegido otro hueco.
         try:
-            pref_int = int(preferencia) if preferencia else None
-        except (ValueError, TypeError):
-            pref_int = None
+            cod_actual = int(cod_inst_actual)
+        except (TypeError, ValueError):
+            cod_actual = cod_inst_actual
+        actual_en_franja = (time_to_minutes(desde) <= time_to_minutes(hora_actual) <= time_to_minutes(hasta)
+                            and cod_actual in salidas)
+        candidatos = [h for h in huecos if not (h["hora"] == hora_actual and h["cod_instalacion"] == cod_actual)]
+        if actual_en_franja:
+            candidatos.append({"hora": hora_actual, "cod_instalacion": cod_actual, "descripcion": "(reserva actual)",
+                               "actual": True})
+        candidatos.sort(key=lambda h: h["hora"])
+        print(f"[Mejora:{reserva_id}] Candidatos {desde}-{hasta}: {[(h['hora'], h['cod_instalacion']) for h in candidatos]}"
+              f" (actual {hora_actual}/{cod_actual} {'en' if actual_en_franja else 'fuera de'} franja)")
 
-        def es_mejora(h):
-            if h["hora"] < hora_actual:
-                return True
-            if h["hora"] == hora_actual and pref_int and h["cod_instalacion"] == pref_int and h["cod_instalacion"] != cod_inst_actual:
-                return True
-            return False
-
-        huecos_mejores_raw = [h for h in huecos if es_mejora(h)]
-        print(f"[Mejora:{reserva_id}] Huecos mejores que {hora_actual} inst={cod_inst_actual}: {[(h['hora'], h['cod_instalacion']) for h in huecos_mejores_raw]}")
-
-        if not huecos_mejores_raw:
-            set_state(mensaje=f"Sin mejora disponible. Reintentando en {poll_interval}s…")
-            stop_event.wait(poll_interval)
-            continue
-
-        # Aplicar preferencia de campo y horario sobre los candidatos
-        horas_mejores = [h["hora"] for h in huecos_mejores_raw]
-        desde_real = min(horas_mejores)
-        huecos_seleccion = filtrar_por_instalacion(huecos_mejores_raw, tipo, preferencia, modo_hora, desde_real, hora_actual)
-
-        if not huecos_seleccion:
-            set_state(mensaje=f"Sin mejora disponible. Reintentando en {poll_interval}s…")
+        huecos_seleccion = filtrar_por_instalacion(candidatos, tipo, preferencia, modo_hora, desde, hasta) if candidatos else []
+        if not huecos_seleccion or huecos_seleccion[0].get("actual"):
+            motivo = "tu hora actual ya es la mejor de la franja" if huecos else "sin huecos libres en la franja"
+            set_state(mensaje=f"Sin mejora ({motivo}). Reintentando en {poll_interval}s…")
             stop_event.wait(poll_interval)
             continue
 
