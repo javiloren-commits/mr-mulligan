@@ -1271,13 +1271,15 @@ def send_telegram(mensaje, jugador_id=None):
 # ══════════════════════════════════════════════════════
 
 def sniper_loop(fecha, params, key=None):
-    """Bucle independiente por búsqueda. Lee/escribe solo su propio estado en snipers[key]."""
+    """Bucle independiente por búsqueda. Lee/escribe solo su propio estado en mi."""
     key = key or fecha
+    with snipers_lock:
+        mi = snipers.get(key)  # el estado de ESTA búsqueda (puede sustituirse al editarla)
 
     def set_state(**kwargs):
         with snipers_lock:
-            if key in snipers:
-                snipers[key].update(kwargs)
+            if snipers.get(key) is mi:  # si la búsqueda se sustituyó (editada), no tocar la nueva
+                mi.update(kwargs)
         guardar_estado()
 
     asegurar_sesion(params)  # token del dueño (necesario si la búsqueda se restauró tras un reinicio)
@@ -1292,8 +1294,8 @@ def sniper_loop(fecha, params, key=None):
     modo_hora = params.get("modo_hora")      # pronto | mitad | tarde | pronto_mitad | mitad_tarde
 
     with snipers_lock:
-        stop_event = snipers[key]["stop_event"]
-        poll_interval = snipers[key]["poll_interval"]
+        stop_event = mi["stop_event"]
+        poll_interval = mi["poll_interval"]
 
     modalidad, salidas = normalizar_modalidad(params)
     tipo = ",".join(str(s) for s in salidas)
@@ -1326,9 +1328,9 @@ def sniper_loop(fecha, params, key=None):
 
     while not stop_event.is_set():
         with snipers_lock:
-            poll_interval = snipers[key]["poll_interval"]
-            snipers[key]["attempts"] += 1
-            intento = snipers[key]["attempts"]
+            poll_interval = mi["poll_interval"]
+            mi["attempts"] += 1
+            intento = mi["attempts"]
 
         print(f"[Sniper:{fecha}] Intento #{intento}")
         set_state(mensaje=f"Buscando huecos en {desde}–{hasta}… (cada {poll_interval}s)")
@@ -1400,9 +1402,9 @@ def sniper_loop(fecha, params, key=None):
         break
 
     with snipers_lock:
-        if key in snipers and snipers[key]["status"] == "searching":
-            snipers[key]["status"] = "idle"
-            snipers[key]["mensaje"] = "Búsqueda detenida"
+        if snipers.get(key) is mi and mi["status"] == "searching":
+            mi["status"] = "idle"
+            mi["mensaje"] = "Búsqueda detenida"
     print(f"[Sniper:{fecha}] Finalizado")
 
 
@@ -1411,10 +1413,12 @@ def mejora_loop(key, params):
     Sniper de mejora: busca un hueco mejor para una reserva existente.
     Si lo encuentra: mueve la reserva, crea ticket y paga.
     """
+    with snipers_lock:
+        mi = snipers.get(key)  # el estado de ESTA búsqueda (puede sustituirse al editarla)
     def set_state(**kwargs):
         with snipers_lock:
-            if key in snipers:
-                snipers[key].update(kwargs)
+            if snipers.get(key) is mi:  # si la búsqueda se sustituyó (editada), no tocar la nueva
+                mi.update(kwargs)
         guardar_estado()
 
     asegurar_sesion(params)  # token del dueño (necesario si la búsqueda se restauró tras un reinicio)
@@ -1433,8 +1437,8 @@ def mejora_loop(key, params):
     modo_hora = params.get("modo_hora")
 
     with snipers_lock:
-        stop_event = snipers[key]["stop_event"]
-        poll_interval = snipers[key]["poll_interval"]
+        stop_event = mi["stop_event"]
+        poll_interval = mi["poll_interval"]
 
     modalidad, salidas = normalizar_modalidad(params)
     tipo = ",".join(str(s) for s in salidas)
@@ -1442,9 +1446,9 @@ def mejora_loop(key, params):
 
     while not stop_event.is_set():
         with snipers_lock:
-            poll_interval = snipers[key]["poll_interval"]
-            snipers[key]["attempts"] += 1
-            intento = snipers[key]["attempts"]
+            poll_interval = mi["poll_interval"]
+            mi["attempts"] += 1
+            intento = mi["attempts"]
 
         print(f"[Mejora:{reserva_id}] Intento #{intento}")
         set_state(mensaje=f"Buscando mejora sobre {hora_actual}… (cada {poll_interval}s)")
@@ -1464,9 +1468,13 @@ def mejora_loop(key, params):
             cod_actual = int(cod_inst_actual)
         except (TypeError, ValueError):
             cod_actual = cod_inst_actual
-        actual_en_franja = (time_to_minutes(desde) <= time_to_minutes(hora_actual) <= time_to_minutes(hasta)
+        # Si se cambia de modalidad (9 <-> 18 hoyos) la reserva actual no compite: cualquier hueco vale
+        misma_modalidad = int(modalidad) == int(params.get("modalidad_actual") or modalidad)
+        actual_en_franja = (misma_modalidad
+                            and time_to_minutes(desde) <= time_to_minutes(hora_actual) <= time_to_minutes(hasta)
                             and cod_actual in salidas)
-        candidatos = [h for h in huecos if not (h["hora"] == hora_actual and h["cod_instalacion"] == cod_actual)]
+        candidatos = [h for h in huecos
+                      if not (misma_modalidad and h["hora"] == hora_actual and h["cod_instalacion"] == cod_actual)]
         if actual_en_franja:
             candidatos.append({"hora": hora_actual, "cod_instalacion": cod_actual, "descripcion": "(reserva actual)",
                                "actual": True})
@@ -1551,9 +1559,9 @@ def mejora_loop(key, params):
         break
 
     with snipers_lock:
-        if key in snipers and snipers[key]["status"] == "searching":
-            snipers[key]["status"] = "idle"
-            snipers[key]["mensaje"] = "Búsqueda de mejora detenida"
+        if snipers.get(key) is mi and mi["status"] == "searching":
+            mi["status"] = "idle"
+            mi["mensaje"] = "Búsqueda de mejora detenida"
     print(f"[Mejora:{reserva_id}] Finalizado")
 
 

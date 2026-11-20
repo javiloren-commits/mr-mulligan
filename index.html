@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Mr. Mulligan v2.8 - búsquedas que sobreviven a reinicios + Sur h1 o h10 -->
+<!-- Mr. Mulligan v2.9 - editar búsquedas + mejora con cambio 9/18 hoyos -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -978,6 +978,9 @@
         <button class="btn-sniper" id="btn-start" onclick="iniciarBusqueda()">
           <span style="pointer-events:none;">⛳</span><span style="pointer-events:none;"> Añadir búsqueda automática</span>
         </button>
+        <button class="btn-secondary" id="btn-cancel-edit" onclick="cancelarEdicion()" style="display:none;margin-top:0.5rem;">
+          Cancelar edición
+        </button>
       </div>
 
       <!-- ── Búsquedas completadas ── -->
@@ -997,13 +1000,21 @@
 <!-- ── MODAL CONFIGURAR MEJORA ── -->
 <div class="modal-overlay" id="modal-mejora" onclick="cerrarModalMejora(event)">
   <div class="modal-sheet">
-    <div class="modal-title">Buscar mejora</div>
+    <div class="modal-title" id="mejora-titulo">Buscar mejora</div>
     <div id="mejora-reserva-info" style="background:var(--green-light);border-radius:10px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;color:var(--slate);"></div>
 
     <div class="params-grid">
-      <div class="form-group full">
+      <div class="form-group">
+        <label>Hoyos</label>
+        <div class="select-wrapper">
+          <select id="mejora-modalidad" onchange="rellenarSalidas('mejora')">
+            <option value="7">18 hoyos</option>
+            <option value="31">9 hoyos</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
         <label>Salida objetivo</label>
-        <input type="hidden" id="mejora-modalidad" value="7">
         <div class="select-wrapper">
           <select id="mejora-tipo" onchange="toggleMejoraPreferencia()"></select>
         </div>
@@ -1046,7 +1057,7 @@
     </div>
 
     <div class="action-area">
-      <button class="btn-primary" onclick="iniciarMejora()">Iniciar búsqueda de mejora</button>
+      <button class="btn-primary" id="mejora-btn" onclick="iniciarMejora()">Iniciar búsqueda de mejora</button>
       <button class="btn-secondary" onclick="cerrarModal2()">Cancelar</button>
     </div>
   </div>
@@ -1685,8 +1696,9 @@ async function iniciarBusqueda() {
 
   if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
 
-  // Solo bloquear si hay una búsqueda realmente en marcha para ese día
-  if (activeSnipers[fecha]) {
+  // Solo bloquear si hay una búsqueda realmente en marcha para ese día (salvo que sea la que se edita)
+  var editando = editandoKey;
+  if (activeSnipers[fecha] && fecha !== editando) {
     var st = activeSnipers[fecha]._lastStatus || 'searching';
     if (st === 'searching' || st === 'found') {
       showToast('Ya hay una búsqueda activa para ' + formatFecha(fecha), 'error');
@@ -1722,12 +1734,23 @@ async function iniciarBusqueda() {
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al iniciar', 'error'); return; }
 
+    // Si se estaba editando: la nueva sustituye a la anterior (el servidor ya paró la del mismo día)
+    if (editando) {
+      if (activeSnipers[editando]) clearInterval(activeSnipers[editando].pollTimer);
+      if (editando !== fecha) {
+        cancelarSniper(editando);  // cambió el día: parar la búsqueda antigua
+      } else {
+        delete activeSnipers[editando];
+      }
+      salirModoEdicion();
+    }
+
     // Registrar sniper localmente (y copia en el dispositivo por si el servidor se reinicia)
     backupBusqueda(fecha, params);
     activeSnipers[fecha] = { params, pollTimer: null, _lastStatus: 'searching' };
     activeSnipers[fecha].pollTimer = setInterval(() => pollSniper(fecha), 2000);
     pollSniper(fecha); // inmediato — también renderiza
-    showToast('Búsqueda iniciada para ' + formatFecha(fecha));
+    showToast((editando ? 'Búsqueda actualizada para ' : 'Búsqueda iniciada para ') + formatFecha(fecha));
 
 
   } catch (e) {
@@ -1836,7 +1859,10 @@ function renderSnipers(allStatus) {
     if (subtitulo) card += ' <span style="font-size:0.75rem;color:var(--slate-light);">' + subtitulo + '</span>';
     card += '</div>';
     if (!isReserved) {
-            card += '<button onclick="cancelarSniperById(\'' + safeId + '\')" style="background:none;border:none;color:var(--slate-light);cursor:pointer;font-size:1.1rem;padding:0.6rem;line-height:1;margin:-0.35rem -0.35rem -0.35rem 0;border-radius:8px;" title="Cancelar">&#x2715;</button>';
+      card += '<div style="display:flex;align-items:center;">';
+      card += '<button onclick="editarSniperById(\'' + safeId + '\')" style="background:none;border:none;color:var(--slate-light);cursor:pointer;font-size:1rem;padding:0.6rem;line-height:1;margin:-0.35rem 0;border-radius:8px;" title="Editar">&#x270E;</button>';
+      card += '<button onclick="cancelarSniperById(\'' + safeId + '\')" style="background:none;border:none;color:var(--slate-light);cursor:pointer;font-size:1.1rem;padding:0.6rem;line-height:1;margin:-0.35rem -0.35rem -0.35rem 0;border-radius:8px;" title="Cancelar">&#x2715;</button>';
+      card += '</div>';
     }
     card += '</div>';
     card += '<div style="font-size:0.8rem;color:var(--slate-light);">' + mensaje + '</div>';
@@ -1857,6 +1883,77 @@ function renderSnipers(allStatus) {
     card += '</div>';
     return card;
   }).join('');
+}
+
+// ── Editar una búsqueda en marcha ──
+var editandoKey = null;
+
+function modoHoraASet(modo) {
+  var m = {
+    pronto: ['pronto'], mitad: ['mitad'], tarde: ['tarde'],
+    pronto_mitad: ['pronto', 'mitad'], mitad_tarde: ['mitad', 'tarde']
+  };
+  return new Set(m[modo] || []);
+}
+
+function editarSniperById(safeId) {
+  var key = window._sniperKeyMap && window._sniperKeyMap[safeId];
+  if (!key || !activeSnipers[key]) return;
+  var p = activeSnipers[key].params || {};
+
+  if (key.indexOf('mejora_') === 0) {
+    var reserva = {
+      id: p.reservaId, fecha: p.fecha, hora: p.hora_actual,
+      cod_instalacion: p.cod_instalacion_actual,
+      modalidad: p.modalidad_actual || p.modalidad || 7,
+      jugadores: p.jugadores
+    };
+    abrirModalMejora(reserva, p);
+    return;
+  }
+
+  // Búsqueda normal: cargar sus parámetros en el formulario
+  editandoKey = key;
+  document.getElementById('param-fecha').value = p.fecha || key;
+  if (typeof actualizarEstadoFecha === 'function') actualizarEstadoFecha();
+  document.getElementById('param-modalidad').value = String(p.modalidad || 7);
+  rellenarSalidas('param', String(p.tipo || '11'));
+  if (p.preferencia) document.getElementById('param-preferencia').value = String(p.preferencia);
+  document.getElementById('param-desde').value = p.desde || '08:00';
+  document.getElementById('param-hasta').value = p.hasta || '10:20';
+  if (p.pollInterval) document.getElementById('param-intervalo').value = String(p.pollInterval);
+  horaSeleccion = modoHoraASet(p.modo_hora);
+  updateHoraUI(horaSeleccion, 'hora-');
+
+  // Jugadores: el titular primero y el resto con su nombre si está en contactos
+  var ids = (p.jugadores && p.jugadores.length) ? p.jugadores : [state.session.jugadorId];
+  state.players = ids.map(function(id) {
+    if (String(id) === String(state.session.jugadorId)) {
+      return { id: state.session.jugadorId, nombre: state.session.nombre || 'Tú', esOwner: true };
+    }
+    var c = (state.contacts || []).find(function(x) { return String(x.id) === String(id); });
+    return { id: id, nombre: c ? c.nombre : ('Jugador #' + id), esOwner: false };
+  });
+  renderPlayers();
+
+  document.getElementById('btn-start').innerHTML =
+    '<span style="pointer-events:none;">&#x1F4BE;</span><span style="pointer-events:none;"> Guardar cambios (' + formatFecha(key) + ')</span>';
+  document.getElementById('btn-cancel-edit').style.display = 'block';
+  document.getElementById('param-fecha').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  showToast('Editando búsqueda del ' + formatFecha(key));
+}
+
+function salirModoEdicion() {
+  editandoKey = null;
+  document.getElementById('btn-start').innerHTML =
+    '<span style="pointer-events:none;">⛳</span><span style="pointer-events:none;"> Añadir búsqueda automática</span>';
+  document.getElementById('btn-cancel-edit').style.display = 'none';
+}
+
+function cancelarEdicion() {
+  salirModoEdicion();
+  state.players = [{ id: state.session.jugadorId, nombre: state.session.nombre || 'Tú', esOwner: true }];
+  renderPlayers();
 }
 
 function cancelarSniperById(safeId) {
@@ -2056,17 +2153,27 @@ function abrirModalMejoraPorId(id) {
   if (reserva) abrirModalMejora(reserva);
 }
 
-function abrirModalMejora(reserva) {
+function abrirModalMejora(reserva, edicion) {
   mejoraPendiente = reserva;
+  document.getElementById('mejora-titulo').textContent = edicion ? 'Editar mejora' : 'Buscar mejora';
+  document.getElementById('mejora-btn').textContent = edicion ? 'Guardar cambios' : 'Iniciar búsqueda de mejora';
   document.getElementById('mejora-reserva-info').innerHTML =
     `<strong>${formatFecha(reserva.fecha)}</strong> · ${reserva.hora} · ${etiquetaSalida(reserva.cod_instalacion, null, reserva.modalidad) || '—'}`;
 
-  // La mejora mantiene la modalidad (9 o 18 hoyos) de la reserva original
-  document.getElementById('mejora-modalidad').value = String(reserva.modalidad || 7);
-  rellenarSalidas('mejora', String(reserva.cod_instalacion || '11'));
+  // Por defecto, la misma modalidad (9 o 18 hoyos) que la reserva; se puede cambiar
+  document.getElementById('mejora-modalidad').value = String((edicion && edicion.modalidad) || reserva.modalidad || 7);
+  rellenarSalidas('mejora', String((edicion && edicion.tipo) || reserva.cod_instalacion || '11'));
 
-  // Poner franja hasta la hora actual como límite superior por defecto
-  if (reserva.hora) {
+  if (edicion) {
+    // Rellenar con los parámetros de la búsqueda que se está editando
+    if (edicion.preferencia) document.getElementById('mejora-preferencia').value = String(edicion.preferencia);
+    document.getElementById('mejora-desde').value = edicion.desde || '08:00';
+    document.getElementById('mejora-hasta').value = edicion.hasta || reserva.hora || '10:00';
+    if (edicion.pollInterval) document.getElementById('mejora-intervalo').value = String(edicion.pollInterval);
+    horaSeleccionMejora = modoHoraASet(edicion.modo_hora);
+    updateHoraUI(horaSeleccionMejora, 'mejora-hora-');
+  } else if (reserva.hora) {
+    // Poner franja hasta la hora actual como límite superior por defecto
     document.getElementById('mejora-hasta').value = reserva.hora;
   }
 
@@ -2111,6 +2218,7 @@ async function iniciarMejora() {
     fecha: r.fecha,
     hora_actual: r.hora,
     cod_instalacion_actual: r.cod_instalacion,
+    modalidad_actual: r.modalidad || 7,
     tipo, modalidad, desde, hasta, pollInterval, preferencia,
     modo_hora: modo_hora_mejora,
     // Usar todos los jugadores de la reserva original, no solo el titular
@@ -2129,7 +2237,8 @@ async function iniciarMejora() {
 
     cerrarModal2();
 
-    // Registrar como sniper activo con clave especial
+    // Registrar como sniper activo con clave especial (si se estaba editando, sustituye a la anterior)
+    if (activeSnipers[key]) clearInterval(activeSnipers[key].pollTimer);
     backupBusqueda(key, body);
     activeSnipers[key] = { params: { ...body, tipo, fecha: r.fecha }, pollTimer: null, _lastStatus: 'searching' };
     activeSnipers[key].pollTimer = setInterval(() => pollSniper(key), 2000);
